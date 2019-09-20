@@ -1,4 +1,5 @@
 *.jfif
+*.png
 
 # History files
 .Rhistory
