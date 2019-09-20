@@ -1,3 +1,5 @@
+*.jfif
+
 # History files
 .Rhistory
 .Rapp.history
