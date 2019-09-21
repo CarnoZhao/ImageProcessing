@@ -11,30 +11,65 @@ library(ggplot2)
 library(dplyr)
 library(Hmisc)
 library(caret)
+library(survcomp)
+library(pROC)
 
 d = read.csv('/home/tongxueqing/zhaox/cervix_cancer/2_filter_feature/Features_multimode_noNA_noRe_withClinicTime.csv', row.names = 1)
 trainidx = d$ctTime < 20161200
 testidx = d$ctTime >= 20161200
-data = d[, !colnames(d) %in% c('HE4', 'ctTime')]
-X = as.matrix(data[, colnames(data) != 'label'])
-Y = as.matrix(data$label)
-Xnorm = apply(X, 2, function(x) {(x - mean(x)) / sd(x)})
+data = d[, !colnames(d) %in% c('ctTime')]
+X = data[, colnames(data) != 'label']
+Y = data$label
+name = colnames(X)
+Xnorm = as.data.frame(apply(X, 2, function(x) {(x - mean(x)) / sd(x)}))
+colnames(Xnorm) = name
 
 trainX = Xnorm[trainidx, ]
 testX = Xnorm[testidx, ]
-trainY = Y[trainidx, ]
-testY = Y[testidx, ]
+trainY = Y[trainidx]
+testY = Y[testidx]
 
-pvalue = function(X, Y) {
-    sapply(colnames(X), function(name) {
-        wilcox.test(X[Y == 1, name], X[Y == 0, name])$p.value
-    })
-}
+### Q: mrmr.cindex ?
+mrmr.seq = mrmr.cindex(x = trainX, cl = as.numeric(trainY), method = 'norther')
+mrmr.sort = mrmr.seq[order(mrmr.seq, decreasing = T)]
+mfeatures = names(mrmr.sort)[1:30]
+trainXsub = trainX[mfeatures]
 
-ptrain = pvalue(trainX, trainY)
-features1 = names(ptrain[ptrain < 0.05])
-trainXsub = trainX[,features1]
-testXsub = testX[,features1]
+pvalues = sapply(mfeatures, function(feature) {
+    wt = wilcox.test(unlist(trainXsub[feature]) ~ trainY)
+    wt$p.value
+})
+pvalues = pvalues[pvalues < 0.05]
+pfeatures = names(pvalues)
+trainXsubsub = trainXsub[pfeatures]
+
+ctrl = rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = F
+                   )
+
+result = rfe(trainXsubsub, trainY, 
+    sizes = 1:10,
+    rfeControl = ctrl
+    )
+rfefeatures = result$optVariables
+png('/home/tongxueqing/zhaox/ImageProcessing/cervix_cancer/rfeplots.png')
+plot(result, type = c('g', 'o'), xlim = 0:11, pch = 1, lwd = 2)
+dev.off()
+
+trainXlr = trainXsubsub[rfefeatures]
+testXlr = testX[colnames(trainXlr)]
+trainXlr$label = trainY
+fit = glm(label ~ ., data = trainXlr, family = binomial(link = 'logit'))
+trainXlr$p = predict(fit, newdata = trainXlr, type = 'response')
+testXlr$label = testY
+testXlr$p = predict(fit, newdata = testXlr, type = 'response')
+
+trainROC = roc(label ~ p, trainXlr, col = "1", print.auc = T)
+testROC = roc(label ~ p, testXlr, col = "2", print.auc = T)
+png('/home/tongxueqing/zhaox/ImageProcessing/cervix_cancer/rocplots.png')
+plot(testROC)
+dev.off()
 
 logistic_regression = function(data, label, testdata, testlabel, iter = 10000, lr = 0.001) {
     data = as.matrix(data) # m n
@@ -61,16 +96,3 @@ logistic_regression = function(data, label, testdata, testlabel, iter = 10000, l
     print(mean((testA > 0.5) == testlabel))
     list(W = W, b = b)
 }
-
-# lrout = logistic_regression(trainXsub, trainY, testXsub, testY, iter = 10000, lr = 0.01)
-# W = lrout$W
-# b = lrout$b
-# rownames(W)[order(abs(W), decreasing = T)[1:10]]
-
-ctrl = rfeControl(functions = rfFuncs,
-                   method = "cv",
-                   verbose = F)
-
-result = rfe(trainXsub, trainY, 
-    sizes = 1:10,
-    rfeControl = ctrl)
