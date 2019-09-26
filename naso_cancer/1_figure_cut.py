@@ -2,13 +2,14 @@
 @Author: Xun Zhao
 @Date: 2019-09-26 14:15:57
 @LastEditors: Xun Zhao
-@LastEditTime: 2019-09-26 15:21:50
+@LastEditTime: 2019-09-26 15:27:00
 @Description: read from mat file and cut the ROI
 '''
 import numpy as np
 import scipy.io as sio
 import os
 import matplotlib.pyplot as plt
+import tqdm
 
 def find_bound(array, axis):
     xsum = np.sum(array, axis = axis)
@@ -29,7 +30,9 @@ def main(cut_size):
     savepath = datapath + 'cut_slice/'
     if not os.path.exists(savepath):
         os.mkdir(savepath)
-    for matfile in os.listdir(slicespath):
+    bar = tqdm.tqdm(os.listdir(slicespath))
+    bar.set_description('Processing: ')
+    for idx, matfile in enumerate(bar):
         mat = sio.loadmat(slicespath + matfile)
         img = mat['v_o']
         roi = mat['v_s']
@@ -48,6 +51,7 @@ def main(cut_size):
         cut_img = img[xmin:xmax, ymin:ymax]
         cut_roi = roi[xmin:xmax, ymin:ymax]
         sio.savemat(savepath + matfile, {'img': cut_img, 'roi' : cut_roi})
-        plot_test(cut_img, cut_roi, matfile, datapath)
+        if idx % 100 == 0:
+            plot_test(cut_img, cut_roi, matfile, datapath)
 
 main(128)
