@@ -142,3 +142,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+*.mat
+*.csv
+*.txt
+_ref
+_data
+_plots
