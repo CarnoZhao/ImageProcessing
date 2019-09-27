@@ -2,7 +2,7 @@
 @Author: Xun Zhao
 @Date: 2019-09-26 15:28:48
 @LastEditors: Xun Zhao
-@LastEditTime: 2019-09-27 17:27:12
+@LastEditTime: 2019-09-27 23:45:15
 @Description: 
 '''
 import numpy as np
@@ -12,6 +12,7 @@ import torch
 import torchvision
 
 def load_data(series, ratio = 0.85):
+    print('loading file ...')
     matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
@@ -22,7 +23,7 @@ def load_data(series, ratio = 0.85):
         matdata = sio.loadmat(matpath + matfile)
         img = matdata['img']
         roi = matdata['roi']
-        X.append([img, roi])
+        X.append([img, roi, np.zeros(img.shape)])
     X = np.array(X)
     Y = np.array(Y)
     shuffleIdx = list(range(len(X)))
@@ -35,7 +36,7 @@ def load_data(series, ratio = 0.85):
     testY = Y[testIdx]
     trainDataset = MyDataset(trainX, trainY)
     testDataset = MyDataset(testX, testY)
-    trainLoader = torch.utils.data.DataLoader(trainDataset, shuffle = True)
+    trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size = 64, shuffle = True)
     testLoader = torch.utils.data.DataLoader(testDataset, shuffle = False)
     return trainLoader, testLoader
 
@@ -56,25 +57,26 @@ def accuracy(loader, net, deivce):
     total = 0
     with torch.no_grad():
         for x, y in loader:
-            x = x.to(deivce)
+            x = x.to(deivce, dtype = torch.float)
             y = y.to(deivce)
             yhat = net(x)
-            yhat = 1 if yhat > 0.5 else 0
-            if yhat == y:
-                correct += 1
-            total += 1
+            correct += int(torch.sum(torch.argmax(yhat, axis = 1) == y))
+            total += len(y)
     return correct / total
             
 
-def dense_net_model(loader, lr, numIterations, device):
-    net = torchvision.models.densenet.DenseNet()
+def dense_net_model(loader, lr, numIterations, decay, device):
+    net = torchvision.models.densenet.DenseNet(num_classes = 2)
     net.to('cuda')
-    loss = torch.nn.BCELoss()
+    loss = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
+    print('start iterating ...')
     for iteration in range(numIterations):
+        if decay and iteration in (30, 60):
+            lr /= 10
         costs = 0
         for x, y in loader:
-            x = x.to(device)
+            x = x.to(device, dtype = torch.float)
             y = y.to(device)
             optimizer.zero_grad()
             yhat = net(x)
@@ -82,16 +84,16 @@ def dense_net_model(loader, lr, numIterations, device):
             cost.backward()
             costs += float(cost)
             optimizer.step()
-        if iteration % 100 == 0:
-            print("Cost after iteration %d: %.3f" % (iteration, costs))
+        print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(lr = 0.0001, numIterations = 1000, device = 'cuda'):
-    trainLoader, testLoader = load_data('1')
-    net = dense_net_model(trainLoader, lr, numIterations, device)
+def main(series, lr = 0.1, numIterations = 300, decay = False, device = 'cuda'):
+    print('starting using lr = %.3f, numiter = %d' %(lr, numIterations))
+    trainLoader, testLoader = load_data(series)
+    net = dense_net_model(trainLoader, lr, numIterations, decay, device)
     trainAccuracy = accuracy(trainLoader, net, device)
     print("Accuracy in train: %.3f" % trainAccuracy)
     testAccuracy = accuracy(testLoader, net, device)
     print("Accuracy in test: %.3f" % testAccuracy)
 
-main()
+main('1', lr = 0.1, numIterations = 90, decay = True)
