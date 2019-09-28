@@ -37,11 +37,11 @@ def generate_rotate(img, roi, num_rotate = 12):
         [simg.rotate(fimg, angle * base, reshape = False),
         simg.rotate(froi, angle * base, reshape = False)]
         for angle in range(num_rotate)])
-    return np.concatenate((rotates, flip_rotate), axis = 3)
+    return np.concatenate((rotates, flip_rotate), axis = 0)
 
 def noise_bright_dark(rotates, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
     noises = []
-    for i in num_noise:
+    for i in range(num_noise):
         noise_add = np.random.randn(*rotates.shape) * sigma
         noise_add[:, :, 1, :] = 0
         noises.append(rotates + noise_add)
@@ -49,14 +49,15 @@ def noise_bright_dark(rotates, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
     bright[:, :, 0, :] += darkness
     dark = rotates[:, :, :, :]
     dark[:, :, 0, :] -= darkness
-    return np.concatenate((rotates, *noises, bright, dark), axis = 3)
+    return np.concatenate((rotates, *noises, bright, dark), axis = 0)
 
 def position_trans(noises, xmin, xmax, ymin, ymax, move = 5):
-    le = noises[xmin - move:xmax - move, ymin:ymax, :, :]
-    ri = noises[xmin + move:xmax + move, ymin:ymax, :, :]
-    up = noises[xmin:xmax, ymin - move:ymax - move, :, :]
-    do = noises[xmin:xmax, ymin + move:ymax + move, :, :]
-    return np.concatenate((noises, le, ri, up, do), axis = 3)
+    ce = noises[:, :, xmin:xmax, ymin:ymax]
+    le = noises[:, :, xmin - move:xmax - move, ymin:ymax]
+    ri = noises[:, :, xmin + move:xmax + move, ymin:ymax]
+    up = noises[:, :, xmin:xmax, ymin - move:ymax - move]
+    do = noises[:, :, xmin:xmax, ymin + move:ymax + move]
+    return np.concatenate((ce, le, ri, up, do), axis = 0)
 
 def main(cut_size):
     datapath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/'
