@@ -27,37 +27,29 @@ def plot_test(cut_img, cut_roi, matfile, datapath):
 
 def generate_rotate(img, roi, num_rotate = 12):
     base = 360 // num_rotate
-    rotates = [(simg.rotate(img, angle * base), simg.rotate(roi, angle * base)) for angle in range(num_rotate)]
+    rotates = np.array([[simg.rotate(img, angle * base), simg.rotate(roi, angle * base)] for angle in range(num_rotate)])
     fimg, froi = np.fliplr(img), np.fliplr(roi)
-    flip_rotate = [(simg.rotate(fimg, angle * base), simg.rotate(froi, angle * base)) for angle in range(num_rotate)]
-    return rotates + flip_rotate
+    flip_rotate = np.array([(simg.rotate(fimg, angle * base), simg.rotate(froi, angle * base)) for angle in range(num_rotate)])
+    return np.concatenate((rotates, flip_rotate), axis = 3)
 
 def noise_bright_dark(rotates, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
     noises = []
-    for img, roi in rotates:
-        noises.append((img, roi))
-        noises.append((img + darkness, roi))
-        noises.append((img - darkness, roi))
-        for i in range(num_noise):
-            nimg = img + np.random.randn(*img.shape) * sigma
-            noises.append((nimg, roi))
-    return noises
+    for i in num_noise:
+        noise_add = np.random.randn(*rotates.shape) * sigma
+        noise_add[:, :, 1, :] = 0
+        noises.append(rotates + noise_add)
+    bright = rotates[:, :, :, :]
+    bright[:, :, 0, :] += darkness
+    dark = rotates[:, :, :, :]
+    dark[:, :, 0, :] -= darkness
+    return np.concatenate((rotates, *noises, bright, dark), axis = 3)
 
 def position_trans(noises, xmin, xmax, ymin, ymax, move = 5):
-    positions = []
-    for img, roi in noises:
-        oimg = img[xmin:xmax, ymin:ymax]
-        limg = img[xmin - 5:xmax - 5, ymin:ymax]
-        rimg = img[xmin + 5:xmax + 5, ymin:ymax]
-        uimg = img[xmin:xmax, ymin - 5:ymax - 5]
-        dimg = img[xmin:xmax, ymin + 5:ymax + 5]
-        oroi = roi[xmin:xmax, ymin:ymax]
-        lroi = roi[xmin - 5:xmax - 5, ymin:ymax]
-        rroi = roi[xmin + 5:xmax + 5, ymin:ymax]
-        uroi = roi[xmin:xmax, ymin - 5:ymax - 5]
-        droi = roi[xmin:xmax, ymin + 5:ymax + 5]
-        positions.extend([(oimg, oroi), (limg, lroi), (rimg, rroi), (uimg, uroi), (dimg, droi)])
-    return positions
+    le = noises[xmin - move:xmax - move, ymin:ymax, :, :]
+    ri = noises[xmin + move:xmax + move, ymin:ymax, :, :]
+    up = noises[xmin:xmax, ymin - move:ymax - move, :, :]
+    do = noises[xmin:xmax, ymin + move:ymax + move, :, :]
+    return np.concatenate((noises, le, ri, up, do), axis = 3)
 
 def main(cut_size):
     datapath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/'
@@ -86,9 +78,6 @@ def main(cut_size):
         all_flip_rotates = generate_rotate(img, roi)
         noises = noise_bright_dark(all_flip_rotates)
         positions = position_trans(noises, xmin, xmax, ymin, ymax)
-        for i, (aug_img, aug_roi) in positions:
-            sio.savemat(savepath + os.path.splitext(matfile)[0] + '_%d.mat' % i, {'img': aug_img, 'roi' : aug_roi})
-            if idx % 1000 == 0 and i % 1000 == 0:
-                plot_test(aug_img, aug_roi, os.path.splitext(matfile)[0] + '_%d.mat' % i, datapath)
+        sio.savemat(savepath + matfile, {'data': positions})
 
 main(224)

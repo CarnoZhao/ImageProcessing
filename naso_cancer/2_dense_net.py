@@ -16,23 +16,19 @@ def load_data(series, ratio = 0.85):
     matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
+    series = 'data' + series + '.mat'
     matfiles = [filename for filename in os.listdir(matpath) if series in filename]
+    X = np.concatenate([sio.loadmat(matfile)['data'] for matfile in matfiles], axis = 3)
     Y = [1 if matfile.startswith('1') else 0 for matfile in matfiles]
-    X = []
-    for matfile in matfiles:
-        matdata = sio.loadmat(matpath + matfile)
-        img = matdata['img']
-        roi = matdata['roi']
-        X.append([img, roi, np.zeros(img.shape)])
-    X = np.array(X)
-    Y = np.array(Y)
-    shuffleIdx = list(range(len(X)))
+    Y = np.repeat(Y, X.shape[-1] // len(Y))
+    length = len(Y)
+    shuffleIdx = list(range(length))
     np.random.shuffle(shuffleIdx)
-    trainIdx = shuffleIdx[:int(round(ratio * len(X)))]
-    testIdx = shuffleIdx[int(round(ratio * len(X))):]
-    trainX = X[trainIdx]
+    trainIdx = shuffleIdx[:int(round(ratio * length))]
+    testIdx = shuffleIdx[int(round(ratio * length)):]
+    trainX = X[:, :, :, trainIdx]
     trainY = Y[trainIdx]
-    testX = X[testIdx]
+    testX = X[:, :, :, testIdx]
     testY = Y[testIdx]
     trainDataset = MyDataset(trainX, trainY)
     testDataset = MyDataset(testX, testY)
@@ -44,7 +40,7 @@ class MyDataset(torch.utils.data.Dataset):
     def __init__(self, X, Y):
         super(MyDataset).__init__()
         self.length = X.shape[0]
-        self.data = [(X[i], Y[i]) for i in range(self.length)]
+        self.data = [(X[:, :, :, i], Y[i]) for i in range(self.length)]
 
     def __getitem__(self, idx):
         return self.data[idx]
