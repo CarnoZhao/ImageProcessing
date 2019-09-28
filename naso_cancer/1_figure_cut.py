@@ -6,6 +6,7 @@
 @Description: read from mat file and cut the ROI
 '''
 import numpy as np
+import scipy.ndimage as simg
 import scipy.io as sio
 import os
 import matplotlib.pyplot as plt
@@ -23,6 +24,40 @@ def plot_test(cut_img, cut_roi, matfile, datapath):
     plot_img = 127 * (cut_img - np.min(cut_img)) / np.ptp(cut_img) + 127 * cut_roi
     plt.imshow(plot_img, cmap = 'gray')
     plt.savefig(plotpath + os.path.splitext(matfile)[0] + '.png')
+
+def generate_rotate(img, roi, num_rotate = 12):
+    base = 360 // num_rotate
+    rotates = [(simg.rotate(img, angle * base), simg.rotate(roi, angle * base)) for angle in range(num_rotate)]
+    fimg, froi = np.fliplr(img), np.fliplr(roi)
+    flip_rotate = [(simg.rotate(fimg, angle * base), simg.rotate(froi, angle * base)) for angle in range(num_rotate)]
+    return rotates + flip_rotate
+
+def noise_bright_dark(rotates, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
+    noises = []
+    for img, roi in rotates:
+        noises.append((img, roi))
+        noises.append((img + darkness, roi))
+        noises.append((img - darkness, roi))
+        for i in range(num_noise):
+            nimg = img + np.random.randn(*img.shape) * sigma
+            noises.append((nimg, roi))
+    return noises
+
+def position_trans(noises, xmin, xmax, ymin, ymax, move = 5):
+    positions = []
+    for img, roi in noises:
+        oimg = img[xmin:xmax, ymin:ymax]
+        limg = img[xmin - 5:xmax - 5, ymin:ymax]
+        rimg = img[xmin + 5:xmax + 5, ymin:ymax]
+        uimg = img[xmin:xmax, ymin - 5:ymax - 5]
+        dimg = img[xmin:xmax, ymin + 5:ymax + 5]
+        oroi = roi[xmin:xmax, ymin:ymax]
+        lroi = roi[xmin - 5:xmax - 5, ymin:ymax]
+        rroi = roi[xmin + 5:xmax + 5, ymin:ymax]
+        uroi = roi[xmin:xmax, ymin - 5:ymax - 5]
+        droi = roi[xmin:xmax, ymin + 5:ymax + 5]
+        positions.extend([(oimg, oroi), (limg, lroi), (rimg, rroi), (uimg, uroi), (dimg, droi)])
+    return positions
 
 def main(cut_size):
     datapath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/'
@@ -48,10 +83,12 @@ def main(cut_size):
             xmax = xcenter + cut_size // 2
             ymin = ycenter - cut_size // 2
             ymax = ycenter + cut_size // 2
-        cut_img = img[xmin:xmax, ymin:ymax]
-        cut_roi = roi[xmin:xmax, ymin:ymax]
-        sio.savemat(savepath + matfile, {'img': cut_img, 'roi' : cut_roi})
-        if idx % 100 == 0:
-            plot_test(cut_img, cut_roi, matfile, datapath)
+        all_flip_rotates = generate_rotate(img, roi)
+        noises = noise_bright_dark(all_flip_rotates)
+        positions = position_trans(noises, xmin, xmax, ymin, ymax)
+        for i, (aug_img, aug_roi) in positions:
+            sio.savemat(savepath + os.path.splitext(matfile)[0] + '_%d.mat' % i, {'img': aug_img, 'roi' : aug_roi})
+            if idx % 1000 == 0 and i % 1000 == 0:
+                plot_test(aug_img, aug_roi, os.path.splitext(matfile)[0] + '_%d.mat' % i, datapath)
 
-main(128)
+main(224)
