@@ -27,9 +27,16 @@ def plot_test(cut_img, cut_roi, matfile, datapath):
 
 def generate_rotate(img, roi, num_rotate = 12):
     base = 360 // num_rotate
-    rotates = np.array([[simg.rotate(img, angle * base), simg.rotate(roi, angle * base)] for angle in range(num_rotate)])
-    fimg, froi = np.fliplr(img), np.fliplr(roi)
-    flip_rotate = np.array([(simg.rotate(fimg, angle * base), simg.rotate(froi, angle * base)) for angle in range(num_rotate)])
+    rotates = np.array([
+        [simg.rotate(img, angle * base, reshape = False),
+        simg.rotate(roi, angle * base, reshape = False)]
+        for angle in range(num_rotate)])
+    fimg = np.fliplr(img)
+    froi = np.fliplr(roi)
+    flip_rotate = np.array([
+        [simg.rotate(fimg, angle * base, reshape = False),
+        simg.rotate(froi, angle * base, reshape = False)]
+        for angle in range(num_rotate)])
     return np.concatenate((rotates, flip_rotate), axis = 3)
 
 def noise_bright_dark(rotates, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
