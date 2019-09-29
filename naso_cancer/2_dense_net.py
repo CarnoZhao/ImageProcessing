@@ -17,33 +17,31 @@ def load_data(series, ratio = 0.85):
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
-    matfiles = [filename for filename in os.listdir(matpath) if series in filename]
-    X = np.concatenate([sio.loadmat(matfile)['data'] for matfile in matfiles], axis = 0)
-    Y = [1 if matfile.startswith('1') else 0 for matfile in matfiles]
-    length = len(X)
-    Y = np.repeat(Y, length // len(Y))
-    shuffleIdx = list(range(length))
-    np.random.shuffle(shuffleIdx)
-    trainIdx = shuffleIdx[:int(round(ratio * length))]
-    testIdx = shuffleIdx[int(round(ratio * length)):]
-    trainX = X[trainIdx]
-    trainY = Y[trainIdx]
-    testX = X[testIdx]
-    testY = Y[testIdx]
-    trainDataset = MyDataset(trainX, trainY)
-    testDataset = MyDataset(testX, testY)
-    trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size = 64, shuffle = True)
-    testLoader = torch.utils.data.DataLoader(testDataset, shuffle = False)
+    matfiles = [matpath + filename for filename in os.listdir(matpath) if series in filename]
+    dataset = MyDataset(matfiles)
+    indices = list(range(len(dataset)))
+    np.random.shuffle(indices)
+    trainIndices = indices[:int(round(ratio * len(dataset)))]
+    testIndices = indices[int(round(ratio * len(dataset))):]
+    trainSampler = torch.utils.data.sampler.SubsetRandomSampler(trainIndices)
+    testSampler = torch.utils.data.sampler.SubsetRandomSampler(testIndices)
+    trainLoader = torch.utils.data.DataLoader(dataset, batch_size = 64, sampler = trainSampler)
+    testLoader = torch.utils.data.DataLoader(dataset, shuffle = False, sampler = testSampler)
     return trainLoader, testLoader
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, X, Y):
+    def __init__(self, matfiles):
         super(MyDataset).__init__()
-        self.length = X.shape[0]
-        self.data = [(X[i], Y[i]) for i in range(self.length)]
+        self.matfiles = matfiles
+        self.numDup = sio.loadmat(self.matfiles[0])['data'].shape[0]
+        self.length = len(self.matfiles) * self.numDup
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        fileidx = idx // self.numDup
+        layeridx = idx % self.numDup
+        x = sio.loadmat(self.matfiles[fileidx])['data'][layeridx, :, :, :]
+        y = 1 if self.matfiles[fileidx].startswith('1') else 0
+        return (x, y)
 
     def __len__(self):
         return self.length
