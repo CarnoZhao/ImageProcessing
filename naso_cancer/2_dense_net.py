@@ -40,6 +40,7 @@ class MyDataset(torch.utils.data.Dataset):
         fileidx = idx // self.numDup
         layeridx = idx % self.numDup
         x = sio.loadmat(self.matfiles[fileidx])['data'][layeridx, :, :, :]
+        x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
         y = 1 if self.matfiles[fileidx].startswith('1') else 0
         return (x, y)
 
