@@ -25,7 +25,7 @@ def plot_test(cut_img, cut_roi, matfile, datapath):
     plt.imshow(plot_img, cmap = 'gray')
     plt.savefig(plotpath + os.path.splitext(matfile)[0] + '.png')
 
-def generate_rotate(cat, indices, num_rotate = 12):
+def generate_rotate(cat, indices, num_rotate = 5):
     xmin, xmax, ymin, ymax = indices
     base = 360 // num_rotate
     rotates = np.array([simg.rotate(cat, angle * base, reshape = False) for angle in range(num_rotate)])
@@ -34,7 +34,7 @@ def generate_rotate(cat, indices, num_rotate = 12):
     catted = np.concatenate((rotates, flip_rotate), axis = 0)
     return catted[:, :, xmin:xmax, ymin:ymax]
 
-def noise_bright_dark(cat, indices, num_noise = 5, sigma = 5 ** 0.5, darkness = 5):
+def noise_bright_dark(cat, indices, num_noise = 3, sigma = 5 ** 0.5, darkness = 5):
     xmin, xmax, ymin, ymax = indices
     noises = []
     for i in range(num_noise):
@@ -45,7 +45,7 @@ def noise_bright_dark(cat, indices, num_noise = 5, sigma = 5 ** 0.5, darkness = 
     bright[:, 0, :] += darkness
     dark = cat[:, :, :]
     dark[:, 0, :] -= darkness
-    catted = np.concatenate((*noises, bright, dark), axis = 0)
+    catted = np.stack((*noises, bright, dark), axis = 0)
     return catted[:, :, xmin:xmax, ymin:ymax]
 
 def position_trans(cat, indices, move = 5):
@@ -54,7 +54,7 @@ def position_trans(cat, indices, move = 5):
     ri = cat[:, xmin + move:xmax + move, ymin:ymax]
     up = cat[:, xmin:xmax, ymin - move:ymax - move]
     do = cat[:, xmin:xmax, ymin + move:ymax + move]
-    return np.concatenate((le, ri, up, do), axis = 0)
+    return np.stack((le, ri, up, do), axis = 0)
 
 def main(cut_size):
     datapath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/'
@@ -81,7 +81,7 @@ def main(cut_size):
             ymin = ycenter - cut_size // 2
             ymax = ycenter + cut_size // 2
         indices = (xmin, xmax, ymin, ymax)
-        cat = np.stack(img, roi, axis = 0)
+        cat = np.stack((img, roi), axis = 0)
         rotated = generate_rotate(cat, indices)
         noised = noise_bright_dark(cat, indices)
         moved = position_trans(cat, indices)
