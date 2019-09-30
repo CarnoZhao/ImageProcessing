@@ -17,8 +17,8 @@ def load_data(series, ratio = 0.85):
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
-    matfiles = [matpath + filename for filename in os.listdir(matpath) if series in filename]
-    dataset = MyDataset(matfiles)
+    matfiles = [filename for filename in os.listdir(matpath) if series in filename]
+    dataset = MyDataset(matfiles, matpath)
     indices = list(range(len(dataset)))
     np.random.shuffle(indices)
     trainIndices = indices[:int(round(ratio * len(dataset)))]
@@ -30,16 +30,17 @@ def load_data(series, ratio = 0.85):
     return trainLoader, testLoader
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, matfiles):
+    def __init__(self, matfiles, matpath):
         super(MyDataset).__init__()
+        self.matpath = matpath
         self.matfiles = matfiles
-        self.numDup = sio.loadmat(self.matfiles[0])['data'].shape[0]
+        self.numDup = sio.loadmat(self.matpath + self.matfiles[0])['data'].shape[0]
         self.length = len(self.matfiles) * self.numDup
 
     def __getitem__(self, idx):
         fileidx = idx // self.numDup
         layeridx = idx % self.numDup
-        x = sio.loadmat(self.matfiles[fileidx])['data'][layeridx, :, :, :]
+        x = sio.loadmat(self.matpath, self.matfiles[fileidx])['data'][layeridx, :, :, :]
         x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
         y = 1 if self.matfiles[fileidx].startswith('1') else 0
         return (x, y)
