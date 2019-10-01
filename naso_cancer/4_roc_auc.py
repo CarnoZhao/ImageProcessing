@@ -123,7 +123,7 @@ def main(series, K = 10, ratio = 0.9, device = 'cuda'):
             testCosts += testCost
             trainAccu += trainAccuracy
             testAccu += testAccuracy
-        print("Train: accu = %.6f, cost = %.6f; Test: accu = %.6f, cost = %.6f" % (trainAccu, trainCosts, testAccu, testCosts))
+        print("Train: accu = %.6f, cost = %.6f; Test: accu = %.6f, cost = %.6f" % (trainAccu / K, trainCosts / K, testAccu / K, testCosts / K))
 
 
 main('1')
