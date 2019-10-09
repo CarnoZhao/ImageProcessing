@@ -1,0 +1,66 @@
+# This is an example of settings that can be used as a starting point for analyzing MR data with large(r) (~5mm) slice
+# thickness. This is only intended as a starting point and is not likely to be the optimal settings for your dataset.
+# Some points in determining better values are added as comments where appropriate
+
+# When adapting and using these settings for an analysis, be sure to add the PyRadiomics version used to allow you to
+# easily recreate your extraction at a later timepoint:
+
+# #############################  Extracted using PyRadiomics version: <version>  ######################################
+
+imageType:
+  Wavelet: 
+      binWidth: 75
+
+featureClass:
+  # redundant Compactness 1, Compactness 2 an Spherical Disproportion features are disabled by default, they can be
+  # enabled by specifying individual feature names (as is done for glcm) and including them in the list.
+  shape:
+  firstorder:
+  glcm:  # Disable SumAverage by specifying all other GLCM features available
+    - 'Autocorrelation'
+    - 'JointAverage'
+    - 'ClusterProminence'
+    - 'ClusterShade'
+    - 'ClusterTendency'
+    - 'Contrast'
+    - 'Correlation'
+    - 'DifferenceAverage'
+    - 'DifferenceEntropy'
+    - 'DifferenceVariance'
+    - 'JointEnergy'
+    - 'JointEntropy'
+    - 'Imc1'
+    - 'Imc2'
+    - 'Idm'
+    - 'Idmn'
+    - 'Id'
+    - 'Idn'
+    - 'InverseVariance'
+    - 'MaximumProbability'
+    - 'SumEntropy'
+    - 'SumSquares'
+  glrlm:
+  glszm:
+  gldm:
+
+setting:
+  normalize: false
+
+  # Image discretization:
+  # The ideal number of bins is somewhere in the order of 16-128 bins. A possible way to define a good binwidt is to
+  # extract firstorder:Range from the dataset to analyze, and choose a binwidth so, that range/binwidth remains approximately
+  # in this range of bins.
+
+
+
+  # Misc:
+  # default label value. Labels can also be defined in the call to featureextractor.execute, as a commandline argument,
+  # or in a column "Label" in the input csv (batchprocessing)
+  label: 1
+  
+    # Forced 2D extracion:
+  # This allows to calculate texture features using anisotropic voxels (although it assumes that voxels are isotropic
+  # in-plane). This is an alternative to resampling the image to isotropic voxels.
+  force2D: true
+  force2Ddimension: 0  # axial slices, for coronal slices, use dimension 1 and for sagittal, dimension 2.
+
