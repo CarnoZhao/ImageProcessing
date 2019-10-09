@@ -146,6 +146,5 @@ venv.bak/
 *.mat
 *.csv
 *.txt
-_ref
 _data
 _plots
