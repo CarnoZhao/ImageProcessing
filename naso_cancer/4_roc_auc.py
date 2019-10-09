@@ -65,7 +65,6 @@ def accuracy_cost(loader, net, deivce):
             cost = float(loss(yhat, y))
             costs += cost
     return correct / total, costs
-            
 
 def dense_net_model(model, loader, lr, numIterations, decay, device):
     if model == '121':
