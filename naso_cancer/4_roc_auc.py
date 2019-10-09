@@ -15,7 +15,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def load_data(series, ratio = 0.9, batch_size = 64):
     print('loading file ...')
-    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
+    matpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'

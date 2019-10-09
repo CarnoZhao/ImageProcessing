@@ -15,7 +15,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def load_data(series, ratio = 0.9, batch_size = 64):
     print('loading file ...')
-    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
+    matpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
@@ -102,7 +102,8 @@ def main(series, K = 10, ratio = 0.9, device = 'cuda'):
     numIters = [100, 200, 300, 400, 500]
     decays = [True, False]
     batch_sizes = [32, 64, 128, 256]
-    models = ['121', '161', '169', '201']
+    models = ['121']
+    # models = ['121', '161', '169', '201']
     prods = product(lrs, numIters, decays, batch_sizes, models)
     for (lr, numIterations, decay, batch_size, model) in prods:
         print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
