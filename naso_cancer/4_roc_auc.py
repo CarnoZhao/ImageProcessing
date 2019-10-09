@@ -102,9 +102,10 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
     elif model == '201':
         net = torchvision.models.densenet.densenet201(num_classes = 2)
     net.to('cuda')
+    weight = torch.FloatTensor([0.84, 0.16]).to(device)
     loss = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
-    # print('start iterating ...')
+    print('start iterating ...')
     for iteration in range(numIterations):
         if decay and iteration in (30, 60):
             lr /= 10
@@ -118,8 +119,8 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             cost.backward()
             costs += float(cost)
             optimizer.step()
-        # if iteration % 10 == 0:
-        #     print("Cost after iteration %d: %.3f" % (iteration, costs))
+        if iteration % 10 == 0:
+            print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
 def main(series, K = 10, ratio = 0.9, device = 'cuda'):
