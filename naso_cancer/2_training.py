@@ -15,7 +15,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def load_data(series, ratio = 0.9, batch_size = 64):
     print('loading file ...')
-    matpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
+    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
@@ -64,22 +64,22 @@ def accuracy_cost(loader, net, deivce):
             total += len(y)
     return correct / total
 
-def auc_roc(loader, net, device, filename):
-    roc = np.zeros((101, 4))
+def auc_roc(loader, net, device, filename, bins):
+    roc = np.zeros((bins + 1, 4))
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device, dtype = torch.float)
             y = y.numpy()
             yhat = net(x).cpu().data.numpy()
             yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
-            for K in range(101):
-                k = K / 100
+            for K in range(bins + 1):
+                k = K / bins
                 yhatK = np.where(yhat[:, 0] > K, 0, 1)
                 roc[K, 0] += np.sum(np.bitwise_and(yhatK == 1, y == 1)) # tp
                 roc[K, 1] += np.sum(np.bitwise_and(yhatK == 1, y == 0)) # fp
                 roc[K, 2] += np.sum(np.bitwise_and(yhatK == 0, y == 0)) # tn
                 roc[K, 3] += np.sum(np.bitwise_and(yhatK == 0, y == 1)) # fn
-    tpr_fpr = np.zeros((101, 2))
+    tpr_fpr = np.zeros((bins + 1, 2))
     tpr_fpr[:, 0] = roc[:, 0] / (roc[:, 0] + roc[:, 3])
     tpr_fpr[:, 1] = roc[:, 1] / (roc[:, 1] + roc[:, 2])
     with open(filename, 'w') as f:
@@ -118,10 +118,10 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False):
+def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-    modelpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
-    rocpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/roc/'
+    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
+    rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         print('loading existed model ... ')
@@ -132,8 +132,8 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     trainAccuracy = accuracy_cost(trainLoader, net, device)
     testAccuracy = accuracy_cost(testLoader, net, device)
     print("Train: accu = %.6f; Test: accu = %.6f" % (trainAccuracy, testAccuracy))
-    trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model)
-    testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model)
+    trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
+    testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
 
-main('1', numIterations = 1)
+main('1', numIterations = 120, ifTrain = True)
