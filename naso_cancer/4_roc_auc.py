@@ -53,22 +53,20 @@ class MyDataset(torch.utils.data.Dataset):
 def accuracy_cost(loader, net, deivce):
     correct = 0
     total = 0
-    loss = torch.nn.CrossEntropyLoss()
-    costs = 0
     with torch.no_grad():
         for x, y in loader:
             x = x.to(deivce, dtype = torch.float)
-            y = y.to(deivce)
-            yhat = net(x)
-            correct += int(torch.sum(torch.argmax(yhat, axis = 1) == y))
+            y = y.numpy()
+            yhat = net(x).cpu().data.numpy()
+            yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
+            yhat = np.where(yhat[:, 0] > 0.5, 0, 1)
+            correct += sum(yhat == y)
             total += len(y)
-            cost = float(loss(yhat, y))
-            costs += cost
-    return correct / total, costs
+    return correct / total
 
 def auc_roc(loader, net, device, filename):
     roc = []
-    for k in range(101):
+    for k in range(1, 100):
         tp = 0
         fp = 0
         tn = 0
@@ -78,12 +76,14 @@ def auc_roc(loader, net, device, filename):
             for x, y in loader:
                 x = x.to(device, dtype = torch.float)
                 y = y.numpy()
-                yhat = net(x).data.numpy()
-                yhat = [1 if i > K else 0 for i in yhat[0]]
-                tp += sum([i == j for i, j in zip(yhat, y) if j == 1])
-                fp += sum([i != j for i, j in zip(yhat, y) if j == 1])
-                tn += sum([i == j for i, j in zip(yhat, y) if j == 0])
-                fn += sum([i != j for i, j in zip(yhat, y) if j == 0])
+                yhat = net(x).cpu().data.numpy()
+                yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
+                yhat = np.where(yhat[:, 0] > K, 0, 1)
+                tp += np.sum(np.bitwise_and(yhat == 1, y == 1))
+                fp += np.sum(np.bitwise_and(yhat == 1, y == 0))
+                tn += np.sum(np.bitwise_and(yhat == 0, y == 0))
+                fn += np.sum(np.bitwise_and(yhat == 0, y == 1))
+        print(tp, fp, tn, fn)
         tpr = tp / (tp + fn)
         fpr = fp / (fp + tn)
         roc.append((tpr, fpr))
@@ -103,7 +103,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
         net = torchvision.models.densenet.densenet201(num_classes = 2)
     net.to('cuda')
     weight = torch.FloatTensor([0.84, 0.16]).to(device)
-    loss = torch.nn.CrossEntropyLoss()
+    loss = torch.nn.CrossEntropyLoss(weight = weight)
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIterations):
@@ -123,27 +123,22 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(series, K = 10, ratio = 0.9, device = 'cuda'):
-    lrs = [0.1]
-    numIters = [90]
-    decays = [True]
-    batch_sizes = [64]
-    models = ['121', '161', '169', '201']
-    prods = product(lrs, numIters, decays, batch_sizes, models)
-    for (lr, numIterations, decay, batch_size, model) in prods:
-        print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-        trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
+def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False):
+    print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
+    modelpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
+    rocpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/roc/'
+    trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
+    if os.path.exists(modelpath) and not ifTrain:
+        print('loading existed model ... ')
+        net = torch.load(modelpath)
+    else:
         net = dense_net_model(model, trainLoader, lr, numIterations, decay, device)
-        trainAccuracy, trainCost = accuracy_cost(trainLoader, net, device)
-        # print("Accuracy in train: %.6f" % trainAccuracy)
-        # print("Cost in train: %.6f" % trainCost)
-        testAccuracy, testCost = accuracy_cost(testLoader, net, device)
-        # print("Accuracy in test: %.6f" % testAccuracy)
-        # print("Cost in test: %.6f" % testCost)
-        print("Train: accu = %.6f, cost = %.6f; Test: accu = %.6f, cost = %.6f" % (trainAccuracy, trainCost, testAccuracy, testCost))
-        torch.save(net, 'ImageProcessing/naso_cancer/_data/models/%s/' % model)
-        trianRoc = auc_roc(trainLoader, net, device, 'model.train')
-        testRoc = auc_roc(testLoader, net, device, 'model.test')
+        torch.save(net, modelpath)
+    trainAccuracy = accuracy_cost(trainLoader, net, device)
+    testAccuracy = accuracy_cost(testLoader, net, device)
+    print("Train: accu = %.6f; Test: accu = %.6f" % (trainAccuracy, testAccuracy))
+    trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model)
+    testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model)
 
 
-main('1')
+main('1', numIterations = 1)
