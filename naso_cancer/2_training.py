@@ -13,24 +13,6 @@ import torchvision
 from itertools import product
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-def load_data(series, ratio = 0.9, batch_size = 64):
-    print('loading file ...')
-    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
-    if series not in ('1', '2', '1c'):
-        raise IOError('Please check data series to be in (1, 2, 1c)')
-    series = 'data' + series + '.mat'
-    matfiles = [filename for filename in os.listdir(matpath) if series in filename]
-    dataset = MyDataset(matfiles, matpath)
-    indices = list(range(len(dataset)))
-    np.random.shuffle(indices)
-    trainIndices = indices[:int(round(ratio * len(dataset)))]
-    testIndices = indices[int(round(ratio * len(dataset))):]
-    trainSampler = torch.utils.data.sampler.SubsetRandomSampler(trainIndices)
-    testSampler = torch.utils.data.sampler.SubsetRandomSampler(testIndices)
-    trainLoader = torch.utils.data.DataLoader(dataset, batch_size = batch_size , sampler = trainSampler)
-    testLoader = torch.utils.data.DataLoader(dataset, shuffle = False, sampler = testSampler)
-    return trainLoader, testLoader
-
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, matfiles, matpath):
         super(MyDataset).__init__()
@@ -49,6 +31,45 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.length
+
+class LabelSmoothingLoss(torch.nn.Module):
+    def __init__(self, classes, smoothing=0.0, dim=-1, weight = None):
+        super(LabelSmoothingLoss, self).__init__()
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+        self.cls = classes
+        self.dim = dim
+        if weight is None:
+            self.weight = torch.ones(classes) / classes
+        else:
+            self.weight = weight
+
+    def forward(self, pred, target):
+        pred = pred.log_softmax(dim=self.dim)
+        with torch.no_grad():
+            true_dist = torch.zeros_like(pred)
+            true_dist.fill_(self.smoothing / self.cls)
+            true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+        return torch.mean(torch.sum(-true_dist * pred * self.weight, dim=self.dim))
+
+
+def load_data(series, ratio = 0.9, batch_size = 64):
+    print('loading file ...')
+    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
+    if series not in ('1', '2', '1c'):
+        raise IOError('Please check data series to be in (1, 2, 1c)')
+    series = 'data' + series + '.mat'
+    matfiles = [filename for filename in os.listdir(matpath) if series in filename]
+    dataset = MyDataset(matfiles, matpath)
+    indices = list(range(len(dataset)))
+    np.random.shuffle(indices)
+    trainIndices = indices[:int(round(ratio * len(dataset)))]
+    testIndices = indices[int(round(ratio * len(dataset))):]
+    trainSampler = torch.utils.data.sampler.SubsetRandomSampler(trainIndices)
+    testSampler = torch.utils.data.sampler.SubsetRandomSampler(testIndices)
+    trainLoader = torch.utils.data.DataLoader(dataset, batch_size = batch_size , sampler = trainSampler)
+    testLoader = torch.utils.data.DataLoader(dataset, shuffle = False, sampler = testSampler)
+    return trainLoader, testLoader
 
 def accuracy_cost(loader, net, deivce):
     correct = 0
@@ -74,7 +95,7 @@ def auc_roc(loader, net, device, filename, bins):
             yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
             for K in range(bins + 1):
                 k = K / bins
-                yhatK = np.where(yhat[:, 0] > K, 0, 1)
+                yhatK = np.where(yhat[:, 0] > k, 0, 1)
                 roc[K, 0] += np.sum(np.bitwise_and(yhatK == 1, y == 1)) # tp
                 roc[K, 1] += np.sum(np.bitwise_and(yhatK == 1, y == 0)) # fp
                 roc[K, 2] += np.sum(np.bitwise_and(yhatK == 0, y == 0)) # tn
@@ -98,7 +119,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
         net = torchvision.models.densenet.densenet201(num_classes = 2)
     net.to('cuda')
     weight = torch.FloatTensor([0.84, 0.16]).to(device)
-    loss = torch.nn.CrossEntropyLoss(weight = weight)
+    loss = LabelSmoothingLoss(classes = 2, smoothing = 0.01, weight = weight)
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIterations):
