@@ -123,7 +123,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIterations):
-        if decay and iteration in (30, 60):
+        if decay and iteration % 30 == 0 and iteration != 0:
             lr /= 10
         costs = 0
         for x, y in loader:
@@ -157,4 +157,4 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
 
-main('1', numIterations = 120, ifTrain = True)
+main('1', numIterations = 100, ifTrain = True)
