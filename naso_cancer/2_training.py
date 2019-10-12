@@ -55,7 +55,7 @@ class LabelSmoothingLoss(torch.nn.Module):
 
 def load_data(series, ratio = 0.9, batch_size = 64):
     print('loading file ...')
-    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
+    matpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
@@ -123,7 +123,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIterations):
-        if decay and iteration in (30, 60):
+        if decay and iteration % 30 == 0 and iteration != 0:
             lr /= 10
         costs = 0
         for x, y in loader:
@@ -141,8 +141,8 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
 
 def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
-    rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
+    modelpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
+    rocpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         print('loading existed model ... ')
@@ -157,4 +157,4 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
 
-main('1', numIterations = 120, ifTrain = True)
+main('1', numIterations = 100, ifTrain = True)
