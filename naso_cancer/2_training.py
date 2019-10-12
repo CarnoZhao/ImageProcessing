@@ -8,6 +8,7 @@
 import numpy as np
 import scipy.io as sio
 import os
+import sys
 import torch
 import torchvision
 from itertools import product
@@ -51,7 +52,6 @@ class LabelSmoothingLoss(torch.nn.Module):
 
 
 def load_data(series, ratio = 0.9, batch_size = 64):
-    print('loading file ...')
     matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
@@ -62,10 +62,10 @@ def load_data(series, ratio = 0.9, batch_size = 64):
     trainIndices = indices[:int(round(ratio * len(matfiles)))]
     testIndices = indices[int(round(ratio * len(matfiles))):]
     trainfiles = [matfiles[i] for i in trainIndices]
-    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/train.files", 'w') as f:
+    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/%s.python.train.files" % prefix, 'w') as f:
         f.write('\n'.join(trainfiles) + '\n')
     testfiles = [matfiles[i] for i in testIndices if matfiles[i].endswith("0.rotate")]
-    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/test.files", 'w') as f:
+    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/%s.python.test.files" % prefix, 'w') as f:
         f.write('\n'.join(testfiles) + '\n')
     traindataset = MyDataset(trainfiles, matpath)
     testdataset = MyDataset(testfiles, matpath)
@@ -141,13 +141,12 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
+def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50, prefix = 'noprefix'):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
-    rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
+    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.python.model' % prefix
+    # rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
-        print('loading existed model ... ')
         net = torch.load(modelpath)
     else:
         net = dense_net_model(model, trainLoader, lr, numIterations, decay, device)
@@ -155,8 +154,9 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     trainAccuracy = accuracy_cost(trainLoader, net, device)
     testAccuracy = accuracy_cost(testLoader, net, device)
     print("Train: accu = %.6f; Test: accu = %.6f" % (trainAccuracy, testAccuracy))
-    trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
-    testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
+    # trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
+    # testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
-
-main('1', numIterations = 100, ifTrain = True)
+global prefix
+prefix = sys.argv[1]
+main('1', numIterations = 100, ifTrain = True, prefix = prefix)

@@ -148,3 +148,4 @@ venv.bak/
 *.txt
 _data
 _plots
+_outs
