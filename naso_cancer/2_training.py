@@ -18,15 +18,12 @@ class MyDataset(torch.utils.data.Dataset):
         super(MyDataset).__init__()
         self.matpath = matpath
         self.matfiles = matfiles
-        self.numDup = sio.loadmat(self.matpath + self.matfiles[0])['data'].shape[0]
-        self.length = len(self.matfiles) * self.numDup
+        self.length = len(self.matfiles)
 
     def __getitem__(self, idx):
-        fileidx = idx // self.numDup
-        layeridx = idx % self.numDup
-        x = sio.loadmat(self.matpath + self.matfiles[fileidx])['data'][layeridx, :, :, :]
+        x = sio.loadmat(self.matpath + self.matfiles[idx])['data']
         x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
-        y = 1 if self.matfiles[fileidx].startswith('1') else 0
+        y = 1 if self.matfiles[idx].startswith('1') else 0
         return (x, y)
 
     def __len__(self):
@@ -60,15 +57,20 @@ def load_data(series, ratio = 0.9, batch_size = 64):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
     matfiles = [filename for filename in os.listdir(matpath) if series in filename]
-    dataset = MyDataset(matfiles, matpath)
-    indices = list(range(len(dataset)))
+    indices = list(range(len(matfiles)))
     np.random.shuffle(indices)
-    trainIndices = indices[:int(round(ratio * len(dataset)))]
-    testIndices = indices[int(round(ratio * len(dataset))):]
-    trainSampler = torch.utils.data.sampler.SubsetRandomSampler(trainIndices)
-    testSampler = torch.utils.data.sampler.SubsetRandomSampler(testIndices)
-    trainLoader = torch.utils.data.DataLoader(dataset, batch_size = batch_size , sampler = trainSampler)
-    testLoader = torch.utils.data.DataLoader(dataset, shuffle = False, sampler = testSampler)
+    trainIndices = indices[:int(round(ratio * len(matfiles)))]
+    testIndices = indices[int(round(ratio * len(matfiles))):]
+    trainfiles = [matfiles[i] for i in trainIndices]
+    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/train.files", 'w') as f:
+        f.write('\n'.join(trainfiles) + '\n')
+    testfiles = [matfiles[i] for i in testIndices if matfiles[i].endswith("0.rotate")]
+    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/test.files", 'w') as f:
+        f.write('\n'.join(testfiles) + '\n')
+    traindataset = MyDataset(trainfiles, matpath)
+    testdataset = MyDataset(testfiles, matpath)
+    trainLoader = torch.utils.data.DataLoader(traindataset, batch_size = batch_size)
+    testLoader = torch.utils.data.DataLoader(testdataset, shuffle = False)
     return trainLoader, testLoader
 
 def accuracy_cost(loader, net, deivce):
