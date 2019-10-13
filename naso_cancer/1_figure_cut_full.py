@@ -88,4 +88,4 @@ def main(cut_size, series):
         position_trans(cat, indices, savepath, matfile)
         sio.savemat(savepath + matfile + '.raw', {'data': cat[:, xmin:xmax, ymin:ymax]})
 
-main(224, '1')
+main(128, '1')

@@ -12,6 +12,8 @@ import sys
 import torch
 import torchvision
 from itertools import product
+sys.path.insert(1, "/home/tongxueqing/zhaox/MachineLearning/Python_ML/")
+import densenet
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 class MyDataset(torch.utils.data.Dataset):
@@ -23,7 +25,7 @@ class MyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         x = sio.loadmat(self.matpath + self.matfiles[idx])['data']
-        x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
+        # x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
         y = 1 if self.matfiles[idx].startswith('1') else 0
         return (x, y)
 
@@ -62,10 +64,10 @@ def load_data(series, ratio = 0.9, batch_size = 64):
     trainIndices = indices[:int(round(ratio * len(matfiles)))]
     testIndices = indices[int(round(ratio * len(matfiles))):]
     trainfiles = [matfiles[i] for i in trainIndices]
-    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/%s.python.train.files" % prefix, 'w') as f:
+    with open(fileidxpath + ".train", 'w') as f:
         f.write('\n'.join(trainfiles) + '\n')
     testfiles = [matfiles[i] for i in testIndices if matfiles[i].endswith("0.rotate")]
-    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/%s.python.test.files" % prefix, 'w') as f:
+    with open(fileidxpath + ".test", 'w') as f:
         f.write('\n'.join(testfiles) + '\n')
     traindataset = MyDataset(trainfiles, matpath)
     testdataset = MyDataset(testfiles, matpath)
@@ -111,14 +113,7 @@ def auc_roc(loader, net, device, filename, bins):
     return roc
 
 def dense_net_model(model, loader, lr, numIterations, decay, device):
-    if model == '121':
-        net = torchvision.models.densenet.densenet121(num_classes = 2)
-    elif model == '161':
-        net = torchvision.models.densenet.densenet161(num_classes = 2)
-    elif model == '169':
-        net = torchvision.models.densenet.densenet169(num_classes = 2)
-    elif model == '201':
-        net = torchvision.models.densenet.densenet201(num_classes = 2)
+    net = densenet.densenet121(num_classes = 2)
     net.to('cuda')
     weight = torch.FloatTensor([0.84, 0.16]).to(device)
     loss = LabelSmoothingLoss(classes = 2, smoothing = 0.01, weight = weight)
@@ -141,9 +136,8 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50, prefix = 'noprefix'):
+def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.python.model' % prefix
     # rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
@@ -157,6 +151,8 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     # trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
     # testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
-global prefix
-prefix = sys.argv[1]
-main('1', numIterations = 100, ifTrain = True, prefix = prefix)
+global fileidxpath
+global modelpath
+fileidxpath = sys.argv[1]
+modelpath = sys.argv[2]
+main('1', lr = 0.05, numIterations = 100, ifTrain = True)
