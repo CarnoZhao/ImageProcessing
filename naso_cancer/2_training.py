@@ -12,7 +12,7 @@ import sys
 import torch
 import torchvision
 from itertools import product
-sys.path.insert(1, "/home/tongxueqing/zhaox/MachineLearning/Python_ML/")
+sys.path.insert(1, "/wangshuo/zhaox/MachineLearning/Python_ML/")
 import densenet
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
@@ -54,12 +54,7 @@ class LabelSmoothingLoss(torch.nn.Module):
 
 
 def load_data(series, ratio = 0.9, batch_size = 64):
-<<<<<<< HEAD
-    print('loading file ...')
     matpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
-=======
-    matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
->>>>>>> 481d5f4c85837747fd8fa4778c5b99543f4a66da
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
@@ -143,12 +138,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
 
 def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-<<<<<<< HEAD
-    modelpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
-    rocpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/roc/'
-=======
-    # rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
->>>>>>> 481d5f4c85837747fd8fa4778c5b99543f4a66da
+    # rocpath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         net = torch.load(modelpath)
@@ -161,13 +151,8 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     # trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
     # testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
-<<<<<<< HEAD
-
-main('1', numIterations = 100, ifTrain = True)
-=======
 global fileidxpath
 global modelpath
 fileidxpath = sys.argv[1]
 modelpath = sys.argv[2]
 main('1', lr = 0.05, numIterations = 100, ifTrain = True)
->>>>>>> 481d5f4c85837747fd8fa4778c5b99543f4a66da
