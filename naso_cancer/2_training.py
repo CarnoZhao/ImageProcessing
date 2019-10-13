@@ -8,9 +8,12 @@
 import numpy as np
 import scipy.io as sio
 import os
+import sys
 import torch
 import torchvision
 from itertools import product
+sys.path.insert(1, "/home/tongxueqing/zhaox/MachineLearning/Python_ML/")
+import densenet
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 class MyDataset(torch.utils.data.Dataset):
@@ -18,15 +21,12 @@ class MyDataset(torch.utils.data.Dataset):
         super(MyDataset).__init__()
         self.matpath = matpath
         self.matfiles = matfiles
-        self.numDup = sio.loadmat(self.matpath + self.matfiles[0])['data'].shape[0]
-        self.length = len(self.matfiles) * self.numDup
+        self.length = len(self.matfiles)
 
     def __getitem__(self, idx):
-        fileidx = idx // self.numDup
-        layeridx = idx % self.numDup
-        x = sio.loadmat(self.matpath + self.matfiles[fileidx])['data'][layeridx, :, :, :]
-        x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
-        y = 1 if self.matfiles[fileidx].startswith('1') else 0
+        x = sio.loadmat(self.matpath + self.matfiles[idx])['data']
+        # x = np.concatenate((x, np.zeros((1, *x.shape[-2:]))), axis = 0)
+        y = 1 if self.matfiles[idx].startswith('1') else 0
         return (x, y)
 
     def __len__(self):
@@ -54,21 +54,25 @@ class LabelSmoothingLoss(torch.nn.Module):
 
 
 def load_data(series, ratio = 0.9, batch_size = 64):
-    print('loading file ...')
     matpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/'
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
     matfiles = [filename for filename in os.listdir(matpath) if series in filename]
-    dataset = MyDataset(matfiles, matpath)
-    indices = list(range(len(dataset)))
+    indices = list(range(len(matfiles)))
     np.random.shuffle(indices)
-    trainIndices = indices[:int(round(ratio * len(dataset)))]
-    testIndices = indices[int(round(ratio * len(dataset))):]
-    trainSampler = torch.utils.data.sampler.SubsetRandomSampler(trainIndices)
-    testSampler = torch.utils.data.sampler.SubsetRandomSampler(testIndices)
-    trainLoader = torch.utils.data.DataLoader(dataset, batch_size = batch_size , sampler = trainSampler)
-    testLoader = torch.utils.data.DataLoader(dataset, shuffle = False, sampler = testSampler)
+    trainIndices = indices[:int(round(ratio * len(matfiles)))]
+    testIndices = indices[int(round(ratio * len(matfiles))):]
+    trainfiles = [matfiles[i] for i in trainIndices]
+    with open(fileidxpath + ".train", 'w') as f:
+        f.write('\n'.join(trainfiles) + '\n')
+    testfiles = [matfiles[i] for i in testIndices if matfiles[i].endswith("0.rotate")]
+    with open(fileidxpath + ".test", 'w') as f:
+        f.write('\n'.join(testfiles) + '\n')
+    traindataset = MyDataset(trainfiles, matpath)
+    testdataset = MyDataset(testfiles, matpath)
+    trainLoader = torch.utils.data.DataLoader(traindataset, batch_size = batch_size)
+    testLoader = torch.utils.data.DataLoader(testdataset, shuffle = False)
     return trainLoader, testLoader
 
 def accuracy_cost(loader, net, deivce):
@@ -109,21 +113,14 @@ def auc_roc(loader, net, device, filename, bins):
     return roc
 
 def dense_net_model(model, loader, lr, numIterations, decay, device):
-    if model == '121':
-        net = torchvision.models.densenet.densenet121(num_classes = 2)
-    elif model == '161':
-        net = torchvision.models.densenet.densenet161(num_classes = 2)
-    elif model == '169':
-        net = torchvision.models.densenet.densenet169(num_classes = 2)
-    elif model == '201':
-        net = torchvision.models.densenet.densenet201(num_classes = 2)
+    net = densenet.densenet121(num_classes = 2)
     net.to('cuda')
     weight = torch.FloatTensor([0.84, 0.16]).to(device)
     loss = LabelSmoothingLoss(classes = 2, smoothing = 0.01, weight = weight)
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIterations):
-        if decay and iteration in (30, 60):
+        if decay and iteration % 30 == 0 and iteration != 0:
             lr /= 10
         costs = 0
         for x, y in loader:
@@ -141,11 +138,9 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
 
 def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('starting using lr = %.3f, numiter = %d, decay = %s, batch_size = %d, model = %s' %(lr, numIterations, str(decay), batch_size, model))
-    modelpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/%s.model' % model
-    rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
+    # rocpath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/'
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
-        print('loading existed model ... ')
         net = torch.load(modelpath)
     else:
         net = dense_net_model(model, trainLoader, lr, numIterations, decay, device)
@@ -153,8 +148,11 @@ def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch
     trainAccuracy = accuracy_cost(trainLoader, net, device)
     testAccuracy = accuracy_cost(testLoader, net, device)
     print("Train: accu = %.6f; Test: accu = %.6f" % (trainAccuracy, testAccuracy))
-    trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
-    testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
+    # trianRoc = auc_roc(trainLoader, net, device, rocpath + '%s.train.csv' % model, bins)
+    # testRoc = auc_roc(testLoader, net, device, rocpath + '%s.test.csv' % model, bins)
 
-
-main('1', numIterations = 120, ifTrain = True)
+global fileidxpath
+global modelpath
+fileidxpath = sys.argv[1]
+modelpath = sys.argv[2]
+main('1', lr = 0.05, numIterations = 100, ifTrain = True)

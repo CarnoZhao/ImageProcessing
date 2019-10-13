@@ -146,5 +146,10 @@ venv.bak/
 *.mat
 *.csv
 *.txt
+*.out
 _data
+_outs
+_archives
 _plots
+_fileidx
+_models
