@@ -1,4 +1,4 @@
-include("/home/tongxueqing/zhaox/MachineLearning/Julia_ML/densenets.jl")
+include("/home/tongxueqing/zhao/MachineLearning/Julia_ML/densenets.jl")
 using .Densenet
 using Random
 using Statistics
@@ -12,13 +12,13 @@ function load_data(series; path, ratio = 0.9, batch = 64)
     len = length(filenames)
     shuffleOrder = shuffle(1:len)
     trainnames = filenames[shuffleOrder[1:Int(floor(ratio * len))]]
-    f = open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/$(prefix).julia.train.files", "w")
+    f = open("/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/fileidx/$(prefix).julia.train.files", "w")
     for filename in trainnames
         write(f, filename * "\n")
     close(f)
     testnames = filenames[shuffleOrder[Int(ceil(ratio * len)):len]]
     testnames = [filename for filename in testnames if occursin("0.rotate", filename)]
-    f = open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/$(prefix).julia.test.files", "w")
+    f = open("/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/fileidx/$(prefix).julia.test.files", "w")
     for filename in testnames
         write(f, filename * "\n")
     close(f)
@@ -55,7 +55,7 @@ end
 
 function main(series, num_iterations; batch = 64, learning_rate = 0.01, beta1 = 0.9, beta2 = 0.999, weight = [0.84, 0.16], prefix = "noprefix")
     println("Using batch = $(batch), iters = $(num_iterations), learning_rate = $(learning_rate), series = $(series), weight = $(weight)")
-    path = "/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/"
+    path = "/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/cut_slice/"
     trainbatches, testbatches = load_data(series, path = path, batch = batch)
     net = Densenet.get_densenet_model(121)
     loss(x, y) = Flux.crossentropy(net(x), y)
@@ -75,7 +75,7 @@ function main(series, num_iterations; batch = 64, learning_rate = 0.01, beta1 = 
         end
         Flux.train!(loss, parameters, (d |> gpu for d in data), optimizer, cb = () -> accuracy(trainbatches, path, net))
     end
-    @save "/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/$(prefix).julia.model" net
+    @save "/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/models/$(prefix).julia.model" net
     accuracy(trainbatches, path, net)
     accuracy(testbatches, path, net)
 end

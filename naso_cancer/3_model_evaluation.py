@@ -1,15 +1,17 @@
 import torch
 import scipy.io as sio
 import os
+import sys
 import numpy as np
+sys.path.insert(1, "/home/tongxueqing/zhao/MachineLearning/Python_ML/")
+import densenet
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def main(name):
-    modelpath = "/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/models/121.model"
-    matpath = "/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/cut_slice/"
-    model = torch.load(modelpath)
+    matpath = "/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/cut_slice/"
+    model = torch.load(modelfile)
     matfiles = []
-    with open("/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/fileidx/%s.files" % name) as f:
+    with open(fileidx + "." + name) as f:
         for line in f:
             matfiles.append(line.strip())
     matfiles = [f for f in matfiles if "data1.mat.0.rotate" in f]
@@ -18,7 +20,6 @@ def main(name):
     ys = []
     for matfile in matfiles:
         data = sio.loadmat(matpath + matfile)['data']
-        data = np.concatenate([data, np.zeros((1, *data.shape[-2:]))], axis = 0)
         data = data[np.newaxis, :, :, :]
         with torch.no_grad():
             data = torch.FloatTensor(data).to('cuda')
@@ -38,14 +39,19 @@ def main(name):
     fn = np.sum(np.bitwise_and(yhats == 0, ys == 1))
     sensi = tp / (tp + fn) # 0.905
     speci = tn / (tn + fp) # 0.464
-    print("Sensitivity in %s is %.3f" % (name, sensi))
-    print("Specificity in %s is %.3f" % (name, speci))
-    print("Accuracy in %s is %.3f" % (name, accu))
-    with open('/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/roc/121model.%s.roc.csv' % name, 'w') as f:
+    print("%s\t%.3f\t%.3f\t%.3f" % (name, sensi, speci, accu))
+    with open(rocfile + ".%s.csv" % name, 'w') as f:
         for i, j in zip(rawyhats, ys):
             f.write(str(i) + ',' + str(j) + '\n')
     return rawyhats, ys
 
+global rocfile
+global modelfile
+global fileidx
+rocfile = sys.argv[1]
+modelfile = sys.argv[2]
+fileidx = sys.argv[3]
+print("\t\tSE\t\tSP\t\tACC")
 main('train')
 main('test')
     
