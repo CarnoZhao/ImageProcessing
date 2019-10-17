@@ -154,4 +154,4 @@ global fileidxpath
 global modelpath
 fileidxpath = sys.argv[1]
 modelpath = sys.argv[2]
-main('1', lr = 0.1, batch_size = 64, numIterations = 100, ifTrain = True)
+main('1', lr = 0.05, batch_size = 32, numIterations = 100, ifTrain = True)
