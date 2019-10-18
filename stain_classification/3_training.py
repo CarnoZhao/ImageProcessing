@@ -4,15 +4,7 @@ import os
 import sys
 import torch
 import torchvision
-from itertools import product
-# sys.path.insert(1, "/home/tongxueqing/zhao/MachineLearning/Python_ML/")
-# import densenet
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
-'''
-filename fields:
-(No.)_(type)_(typeNo.)_(Hospital)_(sliceNo.).tif
-'''
+os.environ["CUDA_VISIBLE_'cuda'S"] = "0"
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, filenames, path):
@@ -35,7 +27,7 @@ class MyDataset(torch.utils.data.Dataset):
         return self.length
 
 class LabelSmoothingLoss(torch.nn.Module):
-    def __init__(self, classes, smoothing=0.0, dim=-1, weight = None):
+    def __init__(self, classes, smoothing=0.0, dim=-1, weight = None, focal = False, gamma = 2):
         super(LabelSmoothingLoss, self).__init__()
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
@@ -45,16 +37,21 @@ class LabelSmoothingLoss(torch.nn.Module):
             self.weight = torch.ones(classes) / classes
         else:
             self.weight = weight
+        self.focal = focal
+        self.gamma = gamma
 
     def forward(self, pred, target):
+        sf = pred.softmax(dim = self.dim)
         pred = pred.log_softmax(dim = self.dim)
+        if self.focal:
+            pred = (1 - sf) ** self.gamma * pred
         with torch.no_grad():
             H = torch.zeros_like(pred)
             H.fill_(self.smoothing / self.cls)
             H.scatter_(1, target.data.unsqueeze(1), self.confidence)
         return torch.mean(torch.sum(-H * pred * self.weight, dim = self.dim))
 
-def load_data(ratio = 0.8, batch_size = 64):
+def load_data(ratio, batch_size):
     path = "/home/tongxueqing/data/zhaox/stain_classification/cutted/"
     filenames = os.listdir(path)
     indices = list(range(len(filenames)))
@@ -73,35 +70,49 @@ def load_data(ratio = 0.8, batch_size = 64):
     testLoader = torch.utils.data.DataLoader(testdataset, shuffle = False)
     return trainLoader, testLoader
 
-def accuracy(loader, net, deivce):
+def accuracy(loader, net):
     correct = 0
     total = 0
     with torch.no_grad():
         for x, y in loader:
-            x = x.to(deivce, dtype = torch.float)
+            x = x.to("cuda", dtype = torch.float)
             y = y.numpy()
             yhat = net(x).cpu().data.numpy()
             yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
-            yhat = np.argmax(yhat, aixs = 0)
-            correct += sum(yhat == y)
+            yhat = np.argmax(yhat, axis = 1)
+            correct += np.sum(np.equal(yhat, y))
             total += len(y)
     return correct / total
 
-def dense_net_model(model, loader, lr, numIterations, decay, device):
+def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma):
     K = 4
-    net = torchvision.models.densenet121(num_classes = K)
+    if preTrain:
+        net = torchvision.models.densenet121(pretrained = preTrain)
+        for p in net.parameters():
+            p.requires_grad = False
+        for p in net.features.denseblock4.parameters():
+            p.requires_grad = True
+        net.classifier = torch.nn.Linear(in_features = 1024, out_features = K, bias = True)
+    else:
+        net = torchvision.models.densenet121(num_classes = K)
     net.to('cuda')
-    weight = torch.FloatTensor([0.25, 0.25, 0.25, 0.25]).to(device)
-    loss = LabelSmoothingLoss(classes = K, smoothing = 0.01, weight = weight)
+    if weighted:
+        # jizhi: 1850, tumor: 5798, tumorln: 521, huaisi: 337
+        t = np.array([1850, 5798, 521, 337])
+        t = (1 / t) / np.sum(1 / t)
+        weight = torch.FloatTensor(t).to('cuda')
+    else:
+        weight = None
+    loss = LabelSmoothingLoss(classes = K, smoothing = smoothing, weight = weight, focal = focal, gamma = gamma)
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
-    for iteration in range(numIterations):
+    for iteration in range(numIters):
         if decay and iteration % 30 == 0 and iteration != 0:
             lr /= 10
         costs = 0
         for x, y in loader:
-            x = x.to(device, dtype = torch.float)
-            y = y.to(device)
+            x = x.to('cuda', dtype = torch.float)
+            y = y.to('cuda')
             optimizer.zero_grad()
             yhat = net(x)
             cost = loss(yhat, y)
@@ -112,20 +123,34 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
-    print('lr = %.3f\nnumiter = %d\ndecay = %s\nbatch_size = %d\nmodel = %s' % (lr, numIterations, str(decay), batch_size, model))
-    trainLoader, testLoader = load_data(ratio = ratio, batch_size = batch_size)
+def main(lr, numIters, ratio, decay, batch_size, ifTrain, preTrain, focal, weighted, smoothing, gamma):
+    trainLoader, testLoader = load_data(ratio, batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         net = torch.load(modelpath)
     else:
-        net = dense_net_model(model, trainLoader, lr, numIterations, decay, device)
+        net = dense_net_model(trainLoader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma)
         torch.save(net, modelpath)
-    trainAccuracy = accuracy(trainLoader, net, device)
-    testAccuracy = accuracy(testLoader, net, device)
+    trainAccuracy = accuracy(trainLoader, net)
+    testAccuracy = accuracy(testLoader, net)
     print("Train: accu = %.6f\nTest: accu = %.6f" % (trainAccuracy, testAccuracy))
 
 global fileidxpath
 global modelpath
 fileidxpath = sys.argv[1]
 modelpath = sys.argv[2]
-main(batch_size = 16, ifTrain = True)
+params = {
+         "numIters":    90,
+       "batch_size":    32,
+          "ifTrain":    True,
+         "preTrain":    True,
+            "focal":    True,
+         "weighted":    True,
+            "decay":    True,
+               "lr":    0.001,
+            "ratio":    0.7,
+        "smoothing":    0.01,
+            "gamma":    2
+}
+for key, value in params.items():
+    print("{:<10s}{:>10s}".format(key, str(value)))
+main(**params)
