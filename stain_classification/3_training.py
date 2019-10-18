@@ -6,19 +6,18 @@ import torch
 import torchvision
 import scipy.io as sio
 from sklearn import metrics
+import matplotlib as mpl
+mpl.use('AGG')
 import matplotlib.pyplot as plt
 os.environ["CUDA_VISIBLE_'cuda'S"] = "0"
 
 class MyDataset(torch.utils.data.Dataset):
-    def __init__(self, filenames, path):
+    def __init__(self, filenames, path, typedic):
         super(MyDataset).__init__()
         self.path = path
         self.filenames = filenames
         self.length = len(self.filenames)
-        self.types = {"jizhi": 0,
-                      "tumor": 1,
-                      "tumorln": 2,
-                      "huaisi": 3,}
+        self.types = typedic
 
     def __getitem__(self, i):
         x = cv2.imread(self.path + self.filenames[i])
@@ -37,7 +36,7 @@ class LabelSmoothingLoss(torch.nn.Module):
         self.cls = classes
         self.dim = dim
         if weight is None:
-            self.weight = torch.ones(classes) / classes
+            self.weight = (torch.ones(classes) / classes).to('cuda')
         else:
             self.weight = weight
         self.focal = focal
@@ -54,21 +53,28 @@ class LabelSmoothingLoss(torch.nn.Module):
             H.scatter_(1, target.data.unsqueeze(1), self.confidence)
         return torch.mean(torch.sum(-H * pred * self.weight, dim = self.dim))
 
-def load_data(ratio, batch_size):
-    path = "/home/tongxueqing/data/zhaox/stain_classification/cutted/"
+def load_data(ratio, batch_size, undersample, typedic):
+    path = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted/"
     filenames = os.listdir(path)
-    indices = list(range(len(filenames)))
-    np.random.shuffle(indices)
-    trainIndices = indices[:int(round(ratio * len(filenames)))]
-    testIndices = indices[int(round(ratio * len(filenames))):]
-    trainfiles = [filenames[i] for i in trainIndices]
+    np.random.shuffle(filenames)
+    if undersample != 0:
+        newfilenames = []
+        cntdic = dict([(key, 0) for key in typedic])
+        for filename in filenames:
+            typeof = filename.split('_')[1]
+            cntdic[typeof] += 1
+            if cntdic[typeof] < undersample:
+                newfilenames.append(filename)
+        filenames = newfilenames
+        np.random.shuffle(filenames)
+    trainfiles = filenames[:int(round(ratio * len(filenames)))]
+    testfiles = filenames[int(round(ratio * len(filenames))):]
     with open(fileidxpath + ".train", 'w') as f:
         f.write('\n'.join(trainfiles) + '\n')
-    testfiles = [filenames[i] for i in testIndices if filenames[i]]
     with open(fileidxpath + ".test", 'w') as f:
         f.write('\n'.join(testfiles) + '\n')
-    traindataset = MyDataset(trainfiles, path)
-    testdataset = MyDataset(testfiles, path)
+    traindataset = MyDataset(trainfiles, path, typedic)
+    testdataset = MyDataset(testfiles, path, typedic)
     trainLoader = torch.utils.data.DataLoader(traindataset, batch_size = batch_size)
     testLoader = torch.utils.data.DataLoader(testdataset, shuffle = False)
     return trainLoader, testLoader
@@ -93,8 +99,8 @@ def plot_roc_auc(trY, trYhat, tsY, tsYhat):
     trauc = metrics.auc(trfpr, trtpr)
     tsauc = metrics.auc(tsfpr, tstpr)
     fig, ax = plt.subplots()
-    ax.plot(trfpr, trtpr, c = 'red', lw = 1, alpha = 0.7, label = u'AUC=%.3f' % trauc)
-    ax.plot(tsfpr, tstpr, c = 'green', lw = 1, alpha = 0.7, label = u'AUC=%.3f' % tsauc)
+    ax.plot(trfpr, trtpr, c = 'red', lw = 1, alpha = 0.7, label = u'trAUC=%.3f' % trauc)
+    ax.plot(tsfpr, tstpr, c = 'green', lw = 1, alpha = 0.7, label = u'tsAUC=%.3f' % tsauc)
     ax.plot((0, 1), (0, 1), c = '#808080', lw = 1, ls = '--', alpha = 0.7)
     ax.set_xlim((-0.01, 1.02))
     ax.set_ylim((-0.01, 1.02))
@@ -128,7 +134,7 @@ def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoo
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
     print('start iterating ...')
     for iteration in range(numIters):
-        if decay and iteration % 30 == 0 and iteration != 0:
+        if decay and iteration % 20 == 0 and iteration != 0:
             lr /= 10
         costs = 0
         for x, y in loader:
@@ -140,12 +146,12 @@ def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoo
             cost.backward()
             costs += float(cost)
             optimizer.step()
-        if iteration % 10 == 0:
+        if iteration % 5 == 0:
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(lr, numIters, ratio, decay, batch_size, ifTrain, preTrain, focal, weighted, smoothing, gamma, K):
-    trainLoader, testLoader = load_data(ratio, batch_size)
+def main(lr, numIters, ratio, decay, batch_size, ifTrain, preTrain, focal, weighted, smoothing, gamma, K, undersample, typedic):
+    trainLoader, testLoader = load_data(ratio, batch_size, undersample, typedic)
     if os.path.exists(modelpath) and not ifTrain:
         net = torch.load(modelpath)
     else:
@@ -165,20 +171,31 @@ fileidxpath = sys.argv[1]
 modelpath = sys.argv[2]
 plotfile = sys.argv[3]
 matpath = sys.argv[4]
+
+typedic = {
+    "jizhi": 0,
+    "tumor": 1,
+    "tumorln": 2,
+    "huaisi": 3
+    }
+
 params = {
-         "numIters":    60,
-       "batch_size":    32,
+         "numIters":    30,
+       "batch_size":    64,
           "ifTrain":    True,
          "preTrain":    True,
             "focal":    True,
-         "weighted":    True,
+         "weighted":    False,
             "decay":    True,
-               "lr":    0.0001,
+               "lr":    0.00001,
             "ratio":    0.7,
         "smoothing":    0.01,
             "gamma":    2,
-                "K":    4
-}
+                "K":    4,
+      "undersample":    500,
+          "typedic":    typedic
+    }
+
 for key, value in params.items():
     print("{:<10s}{:>10s}".format(key, str(value)))
 main(**params)
