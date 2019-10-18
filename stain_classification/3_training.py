@@ -4,6 +4,9 @@ import os
 import sys
 import torch
 import torchvision
+import scipy.io as sio
+from sklearn import metrics
+import matplotlib.pyplot as plt
 os.environ["CUDA_VISIBLE_'cuda'S"] = "0"
 
 class MyDataset(torch.utils.data.Dataset):
@@ -70,22 +73,40 @@ def load_data(ratio, batch_size):
     testLoader = torch.utils.data.DataLoader(testdataset, shuffle = False)
     return trainLoader, testLoader
 
-def accuracy(loader, net):
-    correct = 0
-    total = 0
+def predict(net, loader, K):
+    Y = np.zeros((sum([len(y) for x, y in loader]), K))
+    Yhat = np.zeros((sum([len(y) for x, y in loader]), K))
     with torch.no_grad():
+        i = 0
         for x, y in loader:
-            x = x.to("cuda", dtype = torch.float)
-            y = y.numpy()
-            yhat = net(x).cpu().data.numpy()
-            yhat = np.exp(yhat) / np.sum(np.exp(yhat), axis = 1, keepdims = True)
-            yhat = np.argmax(yhat, axis = 1)
-            correct += np.sum(np.equal(yhat, y))
-            total += len(y)
-    return correct / total
+            x = x.to('cuda', dtype = torch.float)
+            Y[i:i + len(y), :] = torch.nn.functional.one_hot(y, num_classes = K)
+            yhat = torch.softmax(net(x), dim = 1).cpu()
+            Yhat[i:i + len(y), :] = yhat
+            i += len(y)
+    accu = np.mean(np.equal(np.argmax(Y, axis = 1), np.argmax(Yhat, axis = 1)))
+    return Y, Yhat, accu
+    
+def plot_roc_auc(trY, trYhat, tsY, tsYhat):
+    trfpr, trtpr, _ = metrics.roc_curve(trY.ravel(),trYhat.ravel())
+    tsfpr, tstpr, _ = metrics.roc_curve(tsY.ravel(),tsYhat.ravel())
+    trauc = metrics.auc(trfpr, trtpr)
+    tsauc = metrics.auc(tsfpr, tstpr)
+    fig, ax = plt.subplots()
+    ax.plot(trfpr, trtpr, c = 'red', lw = 1, alpha = 0.7, label = u'AUC=%.3f' % trauc)
+    ax.plot(tsfpr, tstpr, c = 'green', lw = 1, alpha = 0.7, label = u'AUC=%.3f' % tsauc)
+    ax.plot((0, 1), (0, 1), c = '#808080', lw = 1, ls = '--', alpha = 0.7)
+    ax.set_xlim((-0.01, 1.02))
+    ax.set_ylim((-0.01, 1.02))
+    ax.set_xticks(np.arange(0, 1.1, 0.1))
+    ax.set_yticks(np.arange(0, 1.1, 0.1))
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.grid(b = True, ls = ':')
+    plt.legend()
+    plt.savefig(plotfile)
 
-def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma):
-    K = 4
+def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma, K):
     if preTrain:
         net = torchvision.models.densenet121(pretrained = preTrain)
         for p in net.parameters():
@@ -123,33 +144,40 @@ def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoo
             print("Cost after iteration %d: %.3f" % (iteration, costs))
     return net
 
-def main(lr, numIters, ratio, decay, batch_size, ifTrain, preTrain, focal, weighted, smoothing, gamma):
+def main(lr, numIters, ratio, decay, batch_size, ifTrain, preTrain, focal, weighted, smoothing, gamma, K):
     trainLoader, testLoader = load_data(ratio, batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         net = torch.load(modelpath)
     else:
-        net = dense_net_model(trainLoader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma)
+        net = dense_net_model(trainLoader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma, K)
         torch.save(net, modelpath)
-    trainAccuracy = accuracy(trainLoader, net)
-    testAccuracy = accuracy(testLoader, net)
+    trY, trYhat, trainAccuracy = predict(net, trainLoader, K)
+    tsY, tsYhat, testAccuracy = predict(net, testLoader, K)
+    sio.savemat(matpath, {'trY': trY, "trYhat": trYhat, "tsY": tsY, "tsYhat":tsYhat})
+    plot_roc_auc(trY, trYhat, tsY, tsYhat)
     print("Train: accu = %.6f\nTest: accu = %.6f" % (trainAccuracy, testAccuracy))
 
 global fileidxpath
 global modelpath
+global plotfile
+global matpath
 fileidxpath = sys.argv[1]
 modelpath = sys.argv[2]
+plotfile = sys.argv[3]
+matpath = sys.argv[4]
 params = {
-         "numIters":    90,
+         "numIters":    60,
        "batch_size":    32,
           "ifTrain":    True,
          "preTrain":    True,
             "focal":    True,
          "weighted":    True,
             "decay":    True,
-               "lr":    0.001,
+               "lr":    0.0001,
             "ratio":    0.7,
         "smoothing":    0.01,
-            "gamma":    2
+            "gamma":    2,
+                "K":    4
 }
 for key, value in params.items():
     print("{:<10s}{:>10s}".format(key, str(value)))
