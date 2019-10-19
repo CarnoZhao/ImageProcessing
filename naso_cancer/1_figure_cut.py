@@ -57,7 +57,7 @@ def position_trans(cat, indices, move = 5):
     return np.stack((le, ri, up, do), axis = 0)
 
 def main(cut_size):
-    datapath = '/wangshuo/zhaox/ImageProcessing/naso_cancer/_data/'
+    datapath = '/wangshuo/zhao/ImageProcessing/naso_cancer/_data/'
     slicespath = datapath + 'DL_slice/'
     savepath = datapath + 'cut_slice/'
     if not os.path.exists(savepath):

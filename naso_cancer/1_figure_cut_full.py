@@ -58,7 +58,7 @@ def position_trans(cat, indices, savepath, matfile, move = 5):
     sio.savemat(savepath + matfile + ".down", {'data': do})
 
 def main(cut_size, series):
-    datapath = '/home/tongxueqing/zhaox/ImageProcessing/naso_cancer/_data/'
+    datapath = '/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/'
     slicespath = datapath + 'DL_slice/'
     savepath = datapath + 'cut_slice/'
     if not os.path.exists(savepath):

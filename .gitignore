@@ -147,11 +147,14 @@ venv.bak/
 *.csv
 *.txt
 *.out
+*.tiff
+*.tif
 _data
 _outs
 _archives
 _plots
 _fileidx
 _models
-
+_roc
+_summary
 images
