@@ -13,6 +13,7 @@ import torch
 import torchvision
 from itertools import product
 sys.path.insert(1, "/home/tongxueqing/zhao/MachineLearning/Python_ML/")
+
 import densenet
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
@@ -55,6 +56,7 @@ class LabelSmoothingLoss(torch.nn.Module):
 
 def load_data(series, ratio = 0.9, batch_size = 64):
     matpath = '/home/tongxueqing/zhao/ImageProcessing/naso_cancer/_data/cut_slice/'
+
     if series not in ('1', '2', '1c'):
         raise IOError('Please check data series to be in (1, 2, 1c)')
     series = 'data' + series + '.mat'
@@ -138,6 +140,7 @@ def dense_net_model(model, loader, lr, numIterations, decay, device):
 
 def main(series, lr = 0.1, numIterations = 100, ratio = 0.9, decay = True, batch_size = 64, model = '121', device = 'cuda', ifTrain = False, bins = 50):
     print('lr = %.3f\nnumiter = %d\ndecay = %s\nbatch_size = %d\nmodel = %s' %(lr, numIterations, str(decay), batch_size, model))
+
     trainLoader, testLoader = load_data(series, ratio = ratio, batch_size = batch_size)
     if os.path.exists(modelpath) and not ifTrain:
         net = torch.load(modelpath)
