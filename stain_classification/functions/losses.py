@@ -1,6 +1,8 @@
 import torch
 import torchvision
 
+__all__ = ["Loss", "LabelSmoothingFocalLoss"]
+
 def _onehot(Y, K):
     oh = torch.zeros((len(Y), K)).to('cuda')
     oh.scatter_(1, Y.data.unsqueeze(1), 1)
@@ -57,3 +59,29 @@ class LabelSmoothingFocalLoss(torch.nn.Module):
             H.fill_(self.smoothing / self.cls)
             H.scatter_(1, target.data.unsqueeze(1), self.confidence)
         return torch.mean(torch.sum(-H * pred * self.weight, dim = self.dim))
+
+if __name__ == '__main__':
+    import numpy as np
+    from copy import deepcopy
+    l1 = Loss(2, True)
+    l2 = LabelSmoothingFocalLoss(2, smoothing = 0.01, focal = True)
+    X = np.random.randint(0, 9, (10, 3))
+    Y = np.random.randint(0, 2, 10)
+    X = torch.FloatTensor(X).to('cuda')
+    Y = torch.tensor(Y).to('cuda')
+    net = torch.nn.Linear(3, 2, bias = True)
+    net2 = deepcopy(net)
+    net = net.to('cuda')
+    net2 = net2.to('cuda')
+    op1 = torch.optim.Adamax(net.parameters(), lr = 0.01)
+    op2 = torch.optim.Adamax(net2.parameters(), lr = 0.01)
+    for pi in net.parameters():
+        print(pi)
+    for pi in net2.parameters():
+        print(pi)
+    cost1 = l1(net(X), Y)
+    cost2 = l2(net2(X), Y)
+    cost1.backward()
+    cost2.backward()
+    op1.step()
+    op2.step()

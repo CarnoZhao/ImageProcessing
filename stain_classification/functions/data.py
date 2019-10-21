@@ -42,8 +42,8 @@ class GaussianBlur(object):
             kernelx = np.transpose(kernelx)
             kernely = cv2.getGaussianKernel(self.H, self.sigma, cv2.CV_32F)
             for i in range(3):
-                img[i] = signal.convolve2d(img[i], kernelx, mode = 'same', boundary = 'fill', fillvalue = 0)
-                img[i] = signal.convolve2d(img[i], kernely, mode = 'same', boundary = 'fill', fillvalue = 0)
+                img[:, :, i] = signal.convolve2d(img[:, :, i], kernelx, mode = 'same', boundary = 'fill', fillvalue = 0)
+                img[:, :, i] = signal.convolve2d(img[:, :, i], kernely, mode = 'same', boundary = 'fill', fillvalue = 0)
             img = Image.fromarray(np.uint8(img))
         return img
 
@@ -54,7 +54,7 @@ def forceRatioLoader(path, batch_size, num_batch, type_weight):
             ColorJitter(brightness = 0.1, contrast = 0.1, saturation = 0.1, hue = 0.1),
             RandomHorizontalFlip(p = 0.5),
             RandomVerticalFlip(p = 0.5),
-            RandomRotation(degrees = 180),
+            # RandomRotation(degrees = 180),
             RandomNoise(p = 0.5),
             GaussianBlur(p = 0.5),
             ToTensor()
@@ -77,8 +77,23 @@ if __name__ == "__main__":
     batch_size = 32
     num_batch = 200
     type_weight = {'jizhi': 1.5, 'tumor': 1.5, 'tumorln': 1, 'huaisi': 1}
-    loaders = forceRatioLoader(path, batch_size, num_batch, type_weight)
-    t = loaders['train']
-    cnt = Counter()
-    for x, y in t:
-        break
+    # loaders = forceRatioLoader(path, batch_size, num_batch, type_weight)
+    transformer = {
+        'train': Compose([
+            ColorJitter(brightness = 0.1, contrast = 0.1, saturation = 0.1, hue = 0.1),
+            RandomHorizontalFlip(p = 0.5),
+            RandomVerticalFlip(p = 0.5),
+            #RandomRotation(degrees = 180),
+            RandomNoise(sigma = 5, p = 1),
+            GaussianBlur(sigma = 1, H = 7, W = 7, p = 1),
+            ToTensor()
+        ]),
+        'test': ToTensor(),
+        'val': ToTensor()
+    }
+    tifpath = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted/test/huaisi/1401317_huaisi_1_ZF_2.tif"
+    img = Image.fromarray(cv2.imread(tifpath))
+    cv2.imwrite("/wangshuo/zhaox/img.png", np.array(img))
+    timg = transformer['train'](img)
+    cv2.imwrite("/wangshuo/zhaox/timg.png", np.transpose(np.uint8(timg.numpy() * 255), (1, 2, 0)))
+    

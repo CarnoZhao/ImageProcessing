@@ -75,9 +75,9 @@ type_weight = {
     }
 
 params = {
-         "numIters":    30,
+         "numIters":    20,
        "batch_size":    32,
-        "num_batch":    200,
+        "num_batch":    150,
          "preTrain":    True,
             "focal":    True,
          "weighted":    False,
