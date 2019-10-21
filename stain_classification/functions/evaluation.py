@@ -7,8 +7,8 @@ mpl.use('AGG')
 import matplotlib.pyplot as plt
 
 def predict(net, loader, K):
-    Y = np.zeros((sum([len(y) for x, y in loader]), K))
-    Yhat = np.zeros((sum([len(y) for x, y in loader]), K))
+    Y = np.zeros((len(loader.dataset.samples), K))
+    Yhat = np.zeros((len(loader.dataset.samples), K))
     with torch.no_grad():
         i = 0
         for x, y in loader:
@@ -52,3 +52,6 @@ def printplot(net, loaders, K, plotpath, matpath):
     plot_roc_auc(data, plotpath)
     for name in data['names']:
         print('Accuracy in %s = %.6f' % (name, accus[name]))
+
+if __name__ == "__main__":
+    pass
