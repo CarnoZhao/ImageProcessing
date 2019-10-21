@@ -3,7 +3,7 @@ import os
 import sys
 import torch
 import torchvision
-os.environ["CUDA_VISIBLE_'cuda'S"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import functions
 
 def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoothing, gamma, K):
@@ -30,7 +30,8 @@ def dense_net_model(loader, decay, numIters, lr, preTrain, focal, weighted, smoo
         weight = None
 
     ## loss-opt ##
-    loss = functions.losses.LabelSmoothingFocalLoss(classes = K, smoothing = smoothing, weight = weight, focal = focal, gamma = gamma)
+    # loss = functions.losses.LabelSmoothingFocalLoss(classes = K, smoothing = smoothing, weight = weight, focal = focal, gamma = gamma)
+    loss = functions.losses.Loss(K = K, focal = focal, gamma = gamma, smoothing = smoothing, weights = weight)
     optimizer = torch.optim.Adamax(net.parameters(), lr = lr)
 
     ## iterating ##
@@ -74,7 +75,7 @@ type_weight = {
     }
 
 params = {
-         "numIters":    1,
+         "numIters":    30,
        "batch_size":    32,
         "num_batch":    200,
          "preTrain":    True,
