@@ -13,7 +13,7 @@ from PIL import Image
 __all__ = ['basicLoader', 'forceRatioLoader']
 
 class RandomNoise(object):
-    def __init__(self, mean = 0.0, sigma = 5, p = 0.5):
+    def __init__(self, mean = 0.0, sigma = 1, p = 0.5):
         self.mean = mean
         self.sigma = sigma
         self.p = p
@@ -29,7 +29,7 @@ class RandomNoise(object):
         return self.__class__.__name__ + 'noised with mean = %.2f and sigma = %.2f' % (self.mean, self.sigma)
 
 class GaussianBlur(object):
-    def __init__(self, sigma = 1, H = 7, W = 7, p = 0.5):
+    def __init__(self, sigma = 1, H = 5, W = 5, p = 0.5):
         self.sigma = sigma
         self.H = H
         self.W = W
@@ -57,10 +57,17 @@ def forceRatioLoader(path, batch_size, num_batch, type_weight):
             # RandomRotation(degrees = 180),
             RandomNoise(p = 0.5),
             GaussianBlur(p = 0.5),
+            RandomCrop(256),
             ToTensor()
         ]),
-        'test': ToTensor(),
-        'val': ToTensor()
+        'test': Compose([
+            CenterCrop(256),
+            ToTensor()
+        ]),
+        'val': Compose([
+            CenterCrop(256),
+            ToTensor()
+        ])
     }
     image_datasets = {name: ImageFolder(os.path.join(path, name), transform = transformer[name]) for name in dsets}
     traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]

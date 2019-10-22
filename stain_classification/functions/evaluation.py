@@ -7,8 +7,12 @@ mpl.use('AGG')
 import matplotlib.pyplot as plt
 
 def predict(net, loader, K):
-    Y = np.zeros((len(loader.dataset.samples), K))
-    Yhat = np.zeros((len(loader.dataset.samples), K))
+    if loader.batch_sampler:
+        length = sum([len(batch) for batch in list(loader.batch_sampler)])
+    else:
+        length = len(loader) * loader.batch_size 
+    Y = np.zeros((length, K))
+    Yhat = np.zeros((length, K))
     with torch.no_grad():
         i = 0
         for x, y in loader:

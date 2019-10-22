@@ -3,7 +3,7 @@ import os
 import sys
 import torch
 import torchvision
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import functions
 
 def dense_net_model(loaders, decay, numIters, lr, preTrain, focal, loss_weights, smoothing, gamma, K):
@@ -14,8 +14,8 @@ def dense_net_model(loaders, decay, numIters, lr, preTrain, focal, loss_weights,
         net = torchvision.models.densenet121(pretrained = preTrain)
         for p in net.parameters():
             p.requires_grad = False
-        # for p in net.features.denseblock4.parameters():
-        #     p.requires_grad = True
+        for p in net.features.denseblock4.parameters():
+            p.requires_grad = True
         net.classifier = torch.nn.Linear(in_features = 1024, out_features = K, bias = True)
     else:
         net = torchvision.models.densenet121(num_classes = K)
@@ -89,12 +89,12 @@ loss_weights = {
 params = {
          "numIters":    20,
        "batch_size":    32,
-        "num_batch":    100,
+        "num_batch":    1000,
          "preTrain":    True,
             "focal":    True,
      "loss_weights":    None,
             "decay":    True,
-               "lr":    0.0001,
+               "lr":    0.00001,
         "smoothing":    0.001,
             "gamma":    2,
                 "K":    4,
