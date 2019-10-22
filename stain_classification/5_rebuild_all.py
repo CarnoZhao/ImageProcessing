@@ -37,7 +37,7 @@ class Loss(torch.nn.Module):
         return torch.mean(torch.sum(-Y * logYhat * self.weights, dim = -1))
 
 class Data(object):
-    def __init__(self, path, num_batch, batch_size, type_weights = None):
+    def __init__(self, path, num_batch, batch_size, type_weights = None, ignore_classes = []):
         self.path = path
         self.setnames = ['train', 'test', 'val']
         self.transformer = {
@@ -63,7 +63,7 @@ class Data(object):
         self.type_weights = type_weights
         self.num_batch = num_batch
         self.batch_size = batch_size
-
+        self.ignore_classes = ignore_classes
 
     class _RandomNoise(object):
         def __init__(self, mean = 0.0, sigma = 1.0, p = 0.5):
@@ -97,10 +97,22 @@ class Data(object):
                 img = Image.fromarray(np.uint8(img))
             return img
 
-    def _pseudo_path(self, )
+    def _pseudo_path(self, path, name):
+        combinepath = os.path.join(path, name)
+        if self.ignore_classes:
+            classes = os.listdir(combinepath)
+            time = os.path.basename(modelpath)[:-6]
+            tmpdir = os.path.join("/wangshuo/zhaox/.tmp", time, name)
+            os.system('mkdir -p %s' % tmpdir)
+            # os.system("rm %s -rf" % os.path.join(tmpdir, '*'))
+            classes = [cl for cl in classes if cl not in self.ignore_classes]
+            for cl in classes:
+                os.system('ln %s %s -s' % (os.path.join(combinepath, cl), os.path.join(tmpdir, cl)))
+            combinepath = tmpdir
+        return combinepath
 
     def load(self):
-        image_datasets = {name: ImageFolder(os.path.join(self.path, name), transform = self.transformer[name]) for name in self.setnames}
+        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform = self.transformer[name]) for name in self.setnames}
         traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]
         typecnter = Counter(traintypes)
         weights = [self.type_weights[traintype] / typecnter[traintype] for traintype in traintypes]
@@ -166,7 +178,7 @@ class Evaluation(object):
             print('Accuracy in %s = %.6f' % (name, accus[name]))
 
 class Train(object):
-    def __init__(self, path, iters, K, pretrain, lr, num_batch, batch_size, type_weights, loss_weights = None, gamma = 0, smoothing = 0, step = 3):
+    def __init__(self, path, iters, K, pretrain, lr, num_batch, batch_size, type_weights, loss_weights = None, gamma = 0, smoothing = 0, step = 3, ignore_classes = []):
         self.path = path
         self.iters = iters
         self.K = K
@@ -179,6 +191,7 @@ class Train(object):
         self.gamma = gamma
         self.smoothing = smoothing
         self.step = step
+        self.ignore_classes = ignore_classes
 
     def _load_net(self):
         if self.pretrain:
@@ -220,7 +233,7 @@ class Train(object):
             print(trainYhat)
 
     def train(self):
-        loaders = Data(self.path, self.num_batch, self.batch_size, self.type_weights).load()
+        loaders = Data(self.path, self.num_batch, self.batch_size, self.type_weights, self.ignore_classes).load()
         loader = loaders['train']
         net = self._load_net()
         weights = self._load_weights(loader)
@@ -261,17 +274,18 @@ loss_weights = {
 
 params = {
          "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted",
-        "iters":    50,
-            "K":    4,
+        "iters":    30,
+            "K":    2,
      "pretrain":    True,
            "lr":    0.00001,
-    "num_batch":    1000,
+    "num_batch":    100,
    "batch_size":    32,
  "type_weights":    type_weights,
  "loss_weights":    None,
         "gamma":    2,
     "smoothing":    0.001,
          "step":    3,
+"ignore_classes":   ["tumorln", "jizhi"]
 }
 
 if __name__ == "__main__":
