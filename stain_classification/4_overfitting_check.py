@@ -5,6 +5,9 @@ import torch
 import functions
 import cv2
 import os
+import matplotlib
+matplotlib.use('AGG')
+import matplotlib.pyplot as plt
 
 def yhat_distribution():
     path = "/wangshuo/zhaox/ImageProcessing/stain_classification/_mat/success.Oct.21_13:42.mat"
@@ -44,5 +47,23 @@ def manual_accuracy():
         Yhat.append(net(train).cpu().data.numpy()[0])
     Yhat = np.array(Yhat)
 
+def tsne_fit(a, b):
+    from sklearn import manifold
+    tsne = manifold.TSNE(n_components=2, init='pca', random_state=501)
+    data = sio.loadmat('/wangshuo/zhaox/val.mat')
+    Yhat = data['Yhat']
+    Y = data['Y']
+    Yhat = Yhat[np.bitwise_or(Y[0] == a, Y[0] == b), np.array([False if i not in (a, b) else True for i in range(4)])]
+    Y = Y[0][np.bitwise_or(Y[0] == a, Y[0] == b)]
+    X_tsne = tsne.fit_transform(Yhat)
+    X_norm = X_tsne
+    x_min, x_max = X_tsne.min(0), X_tsne.max(0)
+    # X_norm = (X_tsne - x_min) / (x_max - x_min)
+    fig, ax = plt.subplots()
+    ax.scatter(X_norm[:, 0], X_norm[:, 1], color = [plt.cm.Set1(yi) for yi in Y])
+    plt.legend()
+    plt.savefig('./tsne.png')
+
+
 if __name__ == '__main__':
-    manual_accuracy()
+    tsne_fit(0, 1)
