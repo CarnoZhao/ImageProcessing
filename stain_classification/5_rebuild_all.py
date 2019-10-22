@@ -5,7 +5,7 @@ import torch
 import torchvision
 import numpy as np
 import matplotlib as mpl
-mpl.usee('AGG')
+mpl.use('AGG')
 import matplotlib.pyplot as plt
 from PIL import Image
 from sklearn import metrics
@@ -14,6 +14,7 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 class Loss(torch.nn.Module):
     def __init__(self, K, smoothing = 0, gamma = 0, weights = 1):
@@ -36,7 +37,7 @@ class Loss(torch.nn.Module):
         return torch.mean(torch.sum(-Y * logYhat * self.weights, dim = -1))
 
 class Data(object):
-    def __init__(self, path, num_batch, batch_size, type_weight = None):
+    def __init__(self, path, num_batch, batch_size, type_weights = None):
         self.path = path
         self.setnames = ['train', 'test', 'val']
         self.transformer = {
@@ -59,9 +60,9 @@ class Data(object):
                 ToTensor()
             ])
         }
-        self.type_weight = type_weight
+        self.type_weights = type_weights
         self.num_batch = num_batch
-        self.self.batch_size = batch_size
+        self.batch_size = batch_size
 
 
     class _RandomNoise(object):
@@ -96,11 +97,13 @@ class Data(object):
                 img = Image.fromarray(np.uint8(img))
             return img
 
+    def _pseudo_path(self, )
+
     def load(self):
         image_datasets = {name: ImageFolder(os.path.join(self.path, name), transform = self.transformer[name]) for name in self.setnames}
         traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]
         typecnter = Counter(traintypes)
-        weights = [self.type_weight[traintype] / typecnter[traintype] for traintype in traintypes]
+        weights = [self.type_weights[traintype] / typecnter[traintype] for traintype in traintypes]
         trainsampler = BatchSampler(WeightedRandomSampler(weights, self.num_batch * self.batch_size, replacement = True), batch_size = self.batch_size, drop_last = True)
         trainloader = DataLoader(image_datasets['train'], batch_sampler = trainsampler)
         valloader = DataLoader(image_datasets['val'])
@@ -182,9 +185,9 @@ class Train(object):
             net = torchvision.models.densenet201(pretrained = True)
             for p in net.parameters():
                 p.requires_grad = False
-            for p in net.features.denseblock4.parameters():
-                p.requires_grad = True
-            net.classifier = torch.nn.Linear(in_features = 1024, out_features = self.K, bias = True)
+            # for p in net.features.denseblock4.parameters():
+            #     p.requires_grad = True
+            net.classifier = torch.nn.Linear(in_features = 1920, out_features = self.K, bias = True)
         else:
             net = torchvision.models.densenet121(num_classes = self.K)
         net = net.cuda()
@@ -217,11 +220,11 @@ class Train(object):
             print(trainYhat)
 
     def train(self):
-        loaders = Data(self.path, self.num_batch, self.batch_size, self.type_weights)
+        loaders = Data(self.path, self.num_batch, self.batch_size, self.type_weights).load()
         loader = loaders['train']
         net = self._load_net()
         weights = self._load_weights(loader)
-        loss, opt = _load_loss_opt(net, weights)
+        loss, opt = self._load_loss_opt(net, weights)
         for i in range(1, self.iters + 1):
             costs = 0
             for x, y in loader:
@@ -242,7 +245,7 @@ modelpath = sys.argv[1]
 plotpath = sys.argv[2]
 matpath = sys.argv[3]      
 
-type_weight = {
+type_weights = {
     "jizhi": 1.5,
     "tumor": 1.5,
     "tumorln": 1,
@@ -258,13 +261,13 @@ loss_weights = {
 
 params = {
          "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted",
-        "iters":    20,
+        "iters":    50,
             "K":    4,
      "pretrain":    True,
            "lr":    0.00001,
     "num_batch":    1000,
    "batch_size":    32,
-  "type_weight":    type_weight,
+ "type_weights":    type_weights,
  "loss_weights":    None,
         "gamma":    2,
     "smoothing":    0.001,

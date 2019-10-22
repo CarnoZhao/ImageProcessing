@@ -86,8 +86,4 @@ if __name__ == "__main__":
     type_weight = {'jizhi': 1.5, 'tumor': 1.5, 'tumorln': 1, 'huaisi': 1}
     loaders = forceRatioLoader(path, batch_size, num_batch, type_weight)
     t = loaders['train']
-    for l in loaders.values():
-        for x, y in l:
-            print(x.numpy()[:2, :2, :2, :2])
-            break
     

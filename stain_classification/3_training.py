@@ -11,12 +11,12 @@ def dense_net_model(loaders, decay, numIters, lr, preTrain, focal, loss_weights,
     ## Pre-Train ##
     loader = loaders['train']
     if preTrain:
-        net = torchvision.models.densenet121(pretrained = preTrain)
+        net = torchvision.models.densenet201(pretrained = preTrain)
         for p in net.parameters():
             p.requires_grad = False
-        for p in net.features.denseblock4.parameters():
-            p.requires_grad = True
-        net.classifier = torch.nn.Linear(in_features = 1024, out_features = K, bias = True)
+        # for p in net.features.denseblock4.parameters():
+        #     p.requires_grad = True
+        net.classifier = torch.nn.Linear(in_features = 1920, out_features = K, bias = True)
     else:
         net = torchvision.models.densenet121(num_classes = K)
     net.to('cuda')
@@ -87,14 +87,14 @@ loss_weights = {
 }
 
 params = {
-         "numIters":    20,
+         "numIters":    5,
        "batch_size":    32,
-        "num_batch":    1000,
+        "num_batch":    100,
          "preTrain":    True,
             "focal":    True,
      "loss_weights":    None,
             "decay":    True,
-               "lr":    0.00001,
+               "lr":    0.0001,
         "smoothing":    0.001,
             "gamma":    2,
                 "K":    4,
