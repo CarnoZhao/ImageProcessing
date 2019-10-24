@@ -65,5 +65,17 @@ def tsne_fit(a, b):
     plt.savefig('./tsne.png')
 
 
+def cnter(matpath):
+    data = sio.loadmat(matpath)
+    for name in data['names']:
+        name = name.strip()
+        print(name + ":")
+        Y = np.argmax(data[name + 'Y'], axis = 1)
+        Yhat = np.argmax(data[name + 'Yhat'], axis = 1)
+        cnt = np.zeros((4, 4))
+        for yi, yih in zip(Y, Yhat):
+            cnt[yi, yih] += 1
+        print(cnt)
+
 if __name__ == '__main__':
-    tsne_fit(0, 1)
+    cnter("/wangshuo/zhaox/ImageProcessing/stain_classification/_mat/success.Oct.24_11:41.mat")
