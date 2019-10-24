@@ -82,8 +82,39 @@ def forceRatioLoader(path, batch_size, num_batch, type_weight):
 if __name__ == "__main__":
     path = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted"
     batch_size = 32
-    num_batch = 200
+    num_batch = 1000
     type_weight = {'jizhi': 1.5, 'tumor': 1.5, 'tumorln': 1, 'huaisi': 1}
-    loaders = forceRatioLoader(path, batch_size, num_batch, type_weight)
-    t = loaders['train']
     
+    traintrans = Compose([
+            RandomCrop(512),
+            ColorJitter(brightness = 0.1, contrast = 0.1, saturation = 0.1, hue = 0.1),
+            RandomHorizontalFlip(p = 0.5),
+            RandomVerticalFlip(p = 0.5),
+            # RandomRotation(degrees = 180),
+            RandomNoise(p = 0.5),
+            GaussianBlur(p = 0.5)
+        ])
+    trans = Compose([
+        RandomCrop(512),
+        ToTensor(),
+        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ToPILImage()
+    ])
+    # traintypes = [os.path.basename(filename).split('_')[1] for filename in filenames]
+    # typecnter = Counter(traintypes)
+    # weights = [type_weight[traintype] / typecnter[traintype] for traintype in traintypes]
+    # trainsampler = WeightedRandomSampler(weights, 32000, replacement = True)
+    # trainsampler = list(trainsampler)
+    for tp in ['huaisi', 'jizhi', 'tumor', 'tumorln']:
+        newp = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/train/%s" % tp
+        savep = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/imagenet_normed/train/%s" % tp
+        os.system("mkdir -p %s" % savep)
+        import tqdm
+        bar = tqdm.tqdm(os.listdir(newp))
+        bar.set_description('Processing: ')
+        for i in bar:
+            filename = i
+            img = Image.open(os.path.join(newp, filename))
+            img = trans(img)
+            img.save(os.path.join(savep, i))
+
