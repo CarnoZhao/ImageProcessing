@@ -14,7 +14,7 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 class Loss(torch.nn.Module):
     def __init__(self, K, smoothing = 0, gamma = 0, weights = 1):
@@ -37,31 +37,10 @@ class Loss(torch.nn.Module):
         return torch.mean(torch.sum(-Y * logYhat * self.weights, dim = -1))
 
 class Data(object):
-    def __init__(self, path, num_batch, batch_size, type_weights = None, ignore_classes = []):
+    def __init__(self, path, batch_size, type_weights = None, ignore_classes = []):
         self.path = path
-        self.setnames = ['train', 'test', 'val']
-        self.transformer = {
-            'train': Compose([
-                ColorJitter(brightness = 0.1, contrast = 0.1, saturation = 0.1, hue = 0.1),
-                RandomHorizontalFlip(p = 0.5),
-                RandomVerticalFlip(p = 0.5),
-                # RandomRotation(degrees = 180),
-                self._RandomNoise(p = 0.5),
-                self._GaussianBlur(p = 0.5),
-                RandomCrop(256),
-                ToTensor()
-            ]),
-            'test': Compose([
-                CenterCrop(256),
-                ToTensor()
-            ]),
-            'val': Compose([
-                CenterCrop(256),
-                ToTensor()
-            ])
-        }
+        self.setnames = ['train', 'test']
         self.type_weights = type_weights
-        self.num_batch = num_batch
         self.batch_size = batch_size
         self.ignore_classes = ignore_classes
 
@@ -112,15 +91,14 @@ class Data(object):
         return combinepath
 
     def load(self):
-        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform = self.transformer[name]) for name in self.setnames}
-        traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]
-        typecnter = Counter(traintypes)
-        weights = [self.type_weights[traintype] / typecnter[traintype] for traintype in traintypes]
-        trainsampler = BatchSampler(WeightedRandomSampler(weights, self.num_batch * self.batch_size, replacement = True), batch_size = self.batch_size, drop_last = True)
-        trainloader = DataLoader(image_datasets['train'], batch_sampler = trainsampler)
-        valloader = DataLoader(image_datasets['val'])
+        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform = ToTensor()) for name in self.setnames}
+        # traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]
+        # typecnter = Counter(traintypes)
+        # weights = [self.type_weights[traintype] / typecnter[traintype] for traintype in traintypes]
+        # trainsampler = BatchSampler(WeightedRandomSampler(weights, self.num_batch * self.batch_size, replacement = True), batch_size = self.batch_size, drop_last = True)
+        trainloader = DataLoader(image_datasets['train'], shuffle = True, batch_size = self.batch_size)
         testloader = DataLoader(image_datasets['test'])
-        return {'train': trainloader, 'val': valloader, 'test': testloader}
+        return {'train': trainloader, 'test': testloader}
     
 class Evaluation(object):
     def __init__(self):
@@ -168,23 +146,45 @@ class Evaluation(object):
         data = {'names': list(loaders.keys())}
         accus = {}
         for key, loader in loaders.items():
-            Y, Yhat, accu = predict(net, loader, K)
+            Y, Yhat, accu = self.predict(net, loader, K)
             data[key + 'Y'] = Y
             data[key + 'Yhat'] = Yhat
             accus[key] = accu
         io.savemat(matpath, data)
-        plot_roc_auc(data)
+        self.plot_roc_auc(data)
         for name in data['names']:
             print('Accuracy in %s = %.6f' % (name, accus[name]))
 
+class Prefetcher():
+    def __init__(self, loader):
+        self.loader = iter(loader)
+        self.stream = torch.cuda.Stream()
+        self.preload()
+
+    def preload(self):
+        try:
+            self.next_input, self.next_target = next(self.loader)
+        except StopIteration:
+            self.next_input = None
+            self.next_target = None
+            return
+        with torch.cuda.stream(self.stream):
+            self.next_input = self.next_input.cuda(non_blocking = True)
+            self.next_target = self.next_target.cuda(non_blocking = True)
+            
+    def next(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        X, Y = self.next_input, self.next_target
+        self.preload()
+        return [X, Y]
+
 class Train(object):
-    def __init__(self, path, iters, K, pretrain, lr, num_batch, batch_size, type_weights, loss_weights = None, gamma = 0, smoothing = 0, step = 3, ignore_classes = []):
+    def __init__(self, path, iters, K, pretrain, lr, batch_size, type_weights, loss_weights = None, gamma = 0, smoothing = 0, step = 3, ignore_classes = []):
         self.path = path
         self.iters = iters
         self.K = K
         self.pretrain = pretrain
         self.lr = lr
-        self.num_batch = num_batch
         self.batch_size = batch_size
         self.type_weights = type_weights
         self.loss_weights = loss_weights
@@ -195,14 +195,15 @@ class Train(object):
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.densenet201(pretrained = True)
-            for p in net.parameters():
-                p.requires_grad = False
+            net = torchvision.models.densenet121(pretrained = True)
+            # for p in net.parameters():
+            #     p.requires_grad = False
             # for p in net.features.denseblock4.parameters():
             #     p.requires_grad = True
-            net.classifier = torch.nn.Linear(in_features = 1920, out_features = self.K, bias = True)
+            net.classifier = torch.nn.Linear(in_features = 1024, out_features = self.K, bias = True)
         else:
             net = torchvision.models.densenet121(num_classes = self.K)
+        # net = torch.nn.DataParallel(net, device_ids=[1, 2])
         net = net.cuda()
         return net
 
@@ -224,16 +225,16 @@ class Train(object):
     def _call_back(self, i, net, loaders, costs):
         if i % self.step == 0:
             print("Costs after iter %d: %.3f" % (i, costs))
-            _, testYhat, testaccu = Evaluation().predict(net, loaders['test'], self.K)
-            _, trainYhat, trainaccu = Evaluation().predict(net, loaders['train'], self.K)
-            print("Accuracy after iteration %d: train %.3f; test %.3f" % (i, trainaccu, testaccu))
-            print("Yhat sample in test:")
-            print(testYhat)
-            print("Yhat sample in train:")
-            print(trainYhat)
+            # _, testYhat, testaccu = Evaluation().predict(net, loaders['test'], self.K)
+            # _, trainYhat, trainaccu = Evaluation().predict(net, loaders['train'], self.K)
+            # print("Accuracy after iteration %d: train %.3f; test %.3f" % (i, trainaccu, testaccu))
+            # print("Yhat sample in test:")
+            # print(testYhat)
+            # print("Yhat sample in train:")
+            # print(trainYhat)
 
     def train(self):
-        loaders = Data(self.path, self.num_batch, self.batch_size, self.type_weights, self.ignore_classes).load()
+        loaders = Data(self.path, self.batch_size, self.type_weights, self.ignore_classes).load()
         loader = loaders['train']
         net = self._load_net()
         weights = self._load_weights(loader)
@@ -248,7 +249,8 @@ class Train(object):
                 costs += float(cost)
                 opt.step()
             self._call_back(i, net, loaders, costs)
-        torch.save(modelpath, net)
+        torch.save(net, modelpath)
+        Evaluation().printplot(net, loaders, self.K)
         return net
 
 global modelpath
@@ -273,19 +275,18 @@ loss_weights = {
 }
 
 params = {
-         "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted",
-        "iters":    30,
-            "K":    2,
+         "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/imagenet_normed",
+        "iters":    50,
+            "K":    4,
      "pretrain":    True,
-           "lr":    0.00001,
-    "num_batch":    100,
-   "batch_size":    32,
+           "lr":    0.0001,
+   "batch_size":    16,
  "type_weights":    type_weights,
  "loss_weights":    None,
-        "gamma":    2,
+        "gamma":    0,
     "smoothing":    0.001,
-         "step":    3,
-"ignore_classes":   ["tumorln", "jizhi"]
+         "step":    10,
+"ignore_classes":   []
 }
 
 if __name__ == "__main__":
