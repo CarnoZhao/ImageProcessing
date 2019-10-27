@@ -7,6 +7,7 @@ from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader
 import numpy as np
+import h5py
 from scipy import signal
 from PIL import Image
 
@@ -78,43 +79,33 @@ def forceRatioLoader(path, batch_size, num_batch, type_weight):
     valloader = DataLoader(image_datasets['val'])
     testloader = DataLoader(image_datasets['test'])
     return {'train': trainloader, 'val': valloader, 'test': testloader}
+
+def write_to_hdf5():
+    f = h5py.File('/wangshuo/zhaox/ImageProcessing/stain_classification/_data/h5/train.h5', 'w')
+    data = f.create_dataset('data', (7993, 3, 512, 512))
+    label = f.create_dataset('label', (7993,), dtype = np.uint8)
+    root = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets/"
+    # for name in os.listdir(root):
+    i = 0
+    for name in ['train']:
+        for tp in os.listdir(os.path.join(root, name)):
+            if tp == 'huaisi':
+                l = 0
+            elif tp == 'jizhi':
+                l = 1
+            elif tp == 'tumor':
+                l = 2
+            else:
+                l = 3
+            for f in os.listdir(os.path.join(root, name, tp)):
+                fp = os.path.join(root, name, tp, f)
+                img = cv2.imread(fp)[:, :, ::-1]
+                data[i, :, :, :] = img.transpose((2, 0, 1))
+                label[i] = l
+                i += 1
+    
+    
     
 if __name__ == "__main__":
-    path = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/cutted"
-    batch_size = 32
-    num_batch = 1000
-    type_weight = {'jizhi': 1.5, 'tumor': 1.5, 'tumorln': 1, 'huaisi': 1}
-    
-    traintrans = Compose([
-            RandomCrop(512),
-            ColorJitter(brightness = 0.1, contrast = 0.1, saturation = 0.1, hue = 0.1),
-            RandomHorizontalFlip(p = 0.5),
-            RandomVerticalFlip(p = 0.5),
-            # RandomRotation(degrees = 180),
-            RandomNoise(p = 0.5),
-            GaussianBlur(p = 0.5)
-        ])
-    trans = Compose([
-        ToTensor(),
-        Normalize([0.665, 0.478, 0.698], [0.219, 0.209, 0.159]),
-        ToPILImage()
-    ])
-    # traintypes = [os.path.basename(filename).split('_')[1] for filename in filenames]
-    # typecnter = Counter(traintypes)
-    # weights = [type_weight[traintype] / typecnter[traintype] for traintype in traintypes]
-    # trainsampler = WeightedRandomSampler(weights, 32000, replacement = True)
-    # trainsampler = list(trainsampler)
-    for name in ['train', 'test']:
-        for tp in ['huaisi', 'jizhi', 'tumor', 'tumorln']:
-            newp = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/%s/%s" % (name, tp)
-            savep = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed/%s/%s" % (name, tp)
-            os.system("mkdir -p %s" % savep)
-            import tqdm
-            bar = tqdm.tqdm(os.listdir(newp))
-            bar.set_description('Processing: ')
-            for i in bar:
-                filename = i
-                img = Image.open(os.path.join(newp, filename))
-                img = trans(img)
-                img.save(os.path.join(savep, i))
+    pass
 

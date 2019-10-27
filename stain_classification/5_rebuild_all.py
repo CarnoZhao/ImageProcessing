@@ -1,6 +1,7 @@
 import os
 import sys
 import cv2
+import h5py
 import torch
 import torchvision
 import numpy as np
@@ -41,6 +42,22 @@ class Loss(torch.nn.Module):
         self.true_dist = true_dist
         return self.criterion(Yhat, torch.autograd.Variable(true_dist, requires_grad = False))
 
+class H5Datasets(torch.utils.data.Dataset):
+        def __init__(self, name):
+            super(H5Datasets, self).__init__()
+            path = '/wangshuo/zhaox/ImageProcessing/stain_classification/_data/h5'
+            filename = os.path.join(path, name + ".h5")
+            self.h5 = h5py.File(filename)
+            self.data = self.h5['data']
+            self.label = self.h5['label']
+
+        def __getitem__(self, i):
+            x = self.data[i] / 255
+            y = self.label[i]
+            return x, y
+
+        def __len__(self):
+            return len(self.label)
 
 class Data(object):
     def __init__(self, path, batch_size, type_weights=None, ignore_classes=[]):
@@ -100,8 +117,8 @@ class Data(object):
         return combinepath
 
     def load(self):
-        image_datasets = {name: ImageFolder(self._pseudo_path(
-            self.path, name), transform=ToTensor()) for name in self.setnames}
+        # image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform=ToTensor()) for name in self.setnames}
+        image_datasets = {name: H5Datasets(name) for name in self.setnames}
         trainloader = DataLoader(
             image_datasets['train'], shuffle=True, batch_size=self.batch_size)
         testloader = DataLoader(image_datasets['test'], shuffle=True)
@@ -178,30 +195,6 @@ class Evaluation(object):
         return cnts
 
 
-class Prefetcher():
-    def __init__(self, loader):
-        self.loader = iter(loader)
-        self.stream = torch.cuda.Stream()
-        self.preload()
-
-    def preload(self):
-        try:
-            self.next_input, self.next_target = next(self.loader)
-        except StopIteration:
-            self.next_input = None
-            self.next_target = None
-            return
-        with torch.cuda.stream(self.stream):
-            self.next_input = self.next_input.cuda(non_blocking=True)
-            self.next_target = self.next_target.cuda(non_blocking=True)
-
-    def next(self):
-        torch.cuda.current_stream().wait_stream(self.stream)
-        X, Y = self.next_input, self.next_target
-        self.preload()
-        return [X, Y]
-
-
 class Train(object):
     def __init__(self, path, iters, K, pretrain, lr, batch_size, gpus, type_weights=None, loss_weights=None, gamma=0, smoothing=0, step=3, ignore_classes=[], subsample=1):
         self.path = path
@@ -221,12 +214,8 @@ class Train(object):
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.resnet34(pretrained=True)
+            net = torchvision.models.resnet18(pretrained=True)
             net.fc = torch.nn.Linear(in_features=512, out_features=self.K)
-            # net = torchvision.models.densenet201(pretrained = True)
-            # for p in net.parameters():
-            #     p.requires_grad = False
-            # net.classifier = torch.nn.Linear(in_features = 1920, out_features = self.K)
         else:
             net = torchvision.models.resnet18(num_classes=self.K)
         net = torch.nn.DataParallel(net, device_ids=self.gpus)
@@ -297,10 +286,10 @@ outfile = sys.argv[4]
 
 params = {
               "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets",
-             "iters":    10,
+             "iters":    20,
                  "K":    4,
           "pretrain":    True,
-                "lr":    0.00005,
+                "lr":    0.0001,
         "batch_size":    64,
       "loss_weights":    None,
              "gamma":    0,
@@ -308,7 +297,7 @@ params = {
               "step":    1,
          "subsample":    1,
     "ignore_classes":    [],
-              "gpus":    [0, 1, 2]
+              "gpus":    [0, 1]
 }
 
 if __name__ == "__main__":
