@@ -162,6 +162,21 @@ class Evaluation(object):
         for name in data['names']:
             print_to_out('Accuracy in %s = %.6f' % (name, accus[name]))
 
+    def cnter(self, matpath, K):
+        cnts = {}
+        data = io.loadmat(matpath)
+        for name in data['names']:
+            name = name.strip()
+            print_to_out(name + ":")
+            Y = np.argmax(data[name + 'Y'], axis = 1)
+            Yhat = np.argmax(data[name + 'Yhat'], axis = 1)
+            cnt = np.zeros((K, K))
+            for yi, yih in zip(Y, Yhat):
+                cnt[yi, yih] += 1
+            print_to_out(np.round(cnt / np.sum(cnt, axis = 1, keepdims = True), decimals = 2))
+            cnts[name] = cnt
+        return cnts
+
 
 class Prefetcher():
     def __init__(self, loader):
@@ -206,27 +221,39 @@ class Train(object):
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.resnet18(pretrained=True)
+            net = torchvision.models.resnet34(pretrained=True)
             net.fc = torch.nn.Linear(in_features=512, out_features=self.K)
+            # net = torchvision.models.densenet201(pretrained = True)
+            # for p in net.parameters():
+            #     p.requires_grad = False
+            # net.classifier = torch.nn.Linear(in_features = 1920, out_features = self.K)
         else:
-            net = torchvision.models.resnet34(num_classes=self.K)
+            net = torchvision.models.resnet18(num_classes=self.K)
         net = torch.nn.DataParallel(net, device_ids=self.gpus)
         net = net.cuda()
         return net
 
 
-    def _call_back(self, i, net, loaders, costs, loss, subsample):
+    def _call_back(self, i, net, loaders, loss, subsample, trainresult):
+        traincosts, trainaccu = trainresult
+        if i == 0:
+            print_to_out("\t|")
         if i % self.step == 0:
             testcosts = 0
+            correct = 0
+            total = 0
             with torch.no_grad():
                 J = len(loaders['test'])
                 for j, (x, y) in enumerate(loaders['test']):
                     net.eval()
                     x = x.cuda(); y = y.cuda()
-                    testcosts += float(loss(net(x), y))
+                    yhat = net(x)
+                    total += len(y)
+                    correct += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
+                    testcosts += float(loss(yhat, y))
                     if j == int(J * subsample):
                         break
-            print_to_out("%d:\ttrcost: %.6f\ttscost: %.6f" % (i, costs, testcosts))
+            print_to_out("%d\t| train: cost: %.3f  accuracy: %.3f | test: cost: %.3f  accuracy: %.3f" % (i, traincosts, trainaccu, testcosts, correct / total))
 
     def train(self):
         loaders = Data(self.path, self.batch_size,
@@ -234,27 +261,28 @@ class Train(object):
         loader = loaders['train']
         net = self._load_net()
         loss = Loss(self.K, self.smoothing, self.gamma)
-        opt = torch.optim.Adamax(net.parameters(), lr=self.lr)
+        opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
+        scheduler = torch.optim.lr_scheduler.StepLR(opt, 10, 0.1)
         for i in range(1, self.iters + 1):
-            if i % 30 == 0:
-                self.lr /= 10
-                opt = torch.optim.Adamax(net.parameters(), lr=self.lr)
-            costs = 0
+            costs = 0; total = 0; correct = 0
             J = len(loader)
             net.train()
             for j, (x, y) in enumerate(loader):
                 x = x.cuda(); y = y.cuda()
+                yhat = net(x)
                 opt.zero_grad()
-                cost = loss(net(x), y)
+                cost = loss(yhat, y)
                 cost.backward()
-                costs += float(cost)
-                opt.step()
+                costs += float(cost); total += len(y)
+                correct += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
+                opt.step(); scheduler.step()
                 if j == int(J * self.subsample):
                     break
-            self._call_back(i, net, loaders, costs, loss, self.subsample)
+            self._call_back(i, net, loaders, loss, self.subsample, (costs, correct / total))
         torch.save(net, modelpath)
         net.eval()
         Evaluation().printplot(net, loaders, self.K, self.subsample)
+        Evaluation().cnter(matpath, self.K)
         return net
 
 
@@ -268,17 +296,17 @@ matpath = sys.argv[3]
 outfile = sys.argv[4]
 
 params = {
-              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed",
+              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets",
              "iters":    10,
                  "K":    4,
-          "pretrain":    False,
-                "lr":    0.00001,
-        "batch_size":    32,
+          "pretrain":    True,
+                "lr":    0.00005,
+        "batch_size":    64,
       "loss_weights":    None,
              "gamma":    0,
          "smoothing":    0.001,
               "step":    1,
-         "subsample":    0.3,
+         "subsample":    1,
     "ignore_classes":    [],
               "gpus":    [0, 1, 2]
 }
