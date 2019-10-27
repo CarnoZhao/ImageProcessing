@@ -65,17 +65,20 @@ def tsne_fit(a, b):
     plt.savefig('./tsne.png')
 
 
-def cnter(matpath):
+def cnter(matpath, K):
+    cnts = {}
     data = sio.loadmat(matpath)
     for name in data['names']:
         name = name.strip()
         print(name + ":")
         Y = np.argmax(data[name + 'Y'], axis = 1)
         Yhat = np.argmax(data[name + 'Yhat'], axis = 1)
-        cnt = np.zeros((4, 4))
+        cnt = np.zeros((K, K))
         for yi, yih in zip(Y, Yhat):
             cnt[yi, yih] += 1
-        print(cnt)
+        print(np.round(cnt / np.sum(cnt, axis = 1, keepdims = True), decimals = 2))
+        cnts[name] = cnt
+    return cnts
 
 if __name__ == '__main__':
-    cnter("/wangshuo/zhaox/ImageProcessing/stain_classification/_mat/success.Oct.24_11:41.mat")
+    cnts = cnter("/wangshuo/zhaox/ImageProcessing/stain_classification/_mat/success.Oct.26_21:18.mat", 4)

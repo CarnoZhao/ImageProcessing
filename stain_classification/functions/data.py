@@ -95,9 +95,8 @@ if __name__ == "__main__":
             GaussianBlur(p = 0.5)
         ])
     trans = Compose([
-        RandomCrop(512),
         ToTensor(),
-        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        Normalize([0.665, 0.478, 0.698], [0.219, 0.209, 0.159]),
         ToPILImage()
     ])
     # traintypes = [os.path.basename(filename).split('_')[1] for filename in filenames]
@@ -105,16 +104,17 @@ if __name__ == "__main__":
     # weights = [type_weight[traintype] / typecnter[traintype] for traintype in traintypes]
     # trainsampler = WeightedRandomSampler(weights, 32000, replacement = True)
     # trainsampler = list(trainsampler)
-    for tp in ['huaisi', 'jizhi', 'tumor', 'tumorln']:
-        newp = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/train/%s" % tp
-        savep = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/imagenet_normed/train/%s" % tp
-        os.system("mkdir -p %s" % savep)
-        import tqdm
-        bar = tqdm.tqdm(os.listdir(newp))
-        bar.set_description('Processing: ')
-        for i in bar:
-            filename = i
-            img = Image.open(os.path.join(newp, filename))
-            img = trans(img)
-            img.save(os.path.join(savep, i))
+    for name in ['train', 'test']:
+        for tp in ['huaisi', 'jizhi', 'tumor', 'tumorln']:
+            newp = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/%s/%s" % (name, tp)
+            savep = "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed/%s/%s" % (name, tp)
+            os.system("mkdir -p %s" % savep)
+            import tqdm
+            bar = tqdm.tqdm(os.listdir(newp))
+            bar.set_description('Processing: ')
+            for i in bar:
+                filename = i
+                img = Image.open(os.path.join(newp, filename))
+                img = trans(img)
+                img.save(os.path.join(savep, i))
 

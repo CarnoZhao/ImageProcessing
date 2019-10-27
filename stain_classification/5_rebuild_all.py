@@ -13,31 +13,37 @@ from scipy import io, signal
 from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
-from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
+
+def print_to_out(*args):
+    with open(outfile, 'a') as f:
+        f.write(' '.join([str(arg) for arg in args]))
+        f.write('\n')
+
 
 class Loss(torch.nn.Module):
-    def __init__(self, K, smoothing = 0, gamma = 0, weights = 1):
+    def __init__(self, K, smoothing=0.0, gamma=0, weights=1):
         super(Loss, self).__init__()
-        self.K = K
+        self.criterion = torch.nn.KLDivLoss()
+        self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
-        self.gamma = gamma
-        self.weights = weights
+        self.K = K
+        self.true_dist = None
 
-    def _label_smoothing(self, Y, K, smoothing):
-        ls = torch.zeros((len(Y), K)).cuda()
-        ls.fill_(smoothing / K)
-        ls.scatter(1, Y.data.unsqueeze(1), 1 - smoothing)
-        return ls
-    
     def forward(self, Yhat, Y):
-        sm = Yhat.softmax(dim = -1)
-        logYhat = Yhat.log_softmax(dim = -1) * (1 - sm) ** self.gamma
-        Y = self._label_smoothing(Y, self.K, self.smoothing)
-        return torch.mean(torch.sum(-Y * logYhat * self.weights, dim = -1))
+        assert Yhat.size(1) == self.K
+        Yhat = Yhat.log_softmax(-1)
+        true_dist = Yhat.data.clone()
+        true_dist.fill_(self.smoothing / (self.K - 1))
+        true_dist.scatter_(1, Y.data.unsqueeze(1), self.confidence)
+        self.true_dist = true_dist
+        return self.criterion(Yhat, torch.autograd.Variable(true_dist, requires_grad = False))
+
 
 class Data(object):
-    def __init__(self, path, batch_size, type_weights = None, ignore_classes = []):
+    def __init__(self, path, batch_size, type_weights=None, ignore_classes=[]):
         self.path = path
         self.setnames = ['train', 'test']
         self.type_weights = type_weights
@@ -45,20 +51,21 @@ class Data(object):
         self.ignore_classes = ignore_classes
 
     class _RandomNoise(object):
-        def __init__(self, mean = 0.0, sigma = 1.0, p = 0.5):
+        def __init__(self, mean=0.0, sigma=1.0, p=0.5):
             self.mean = mean
             self.sigma = sigma
             self.p = p
 
         def __call__(self, img):
             if np.random.random() < self.p:
-                img = img + np.random.randn(*img.size, 3) * self.sigma + self.mean
+                img = img + \
+                    np.random.randn(*img.size, 3) * self.sigma + self.mean
                 img = np.minimum(255, np.maximum(0, img))
                 img = Image.fromarray(np.uint8(img))
             return img
 
     class _GaussianBlur(object):
-        def __init__(self, sigma = 1.0, H = 5, W = 5, p = 0.5):
+        def __init__(self, sigma=1.0, H=5, W=5, p=0.5):
             self.sigma = sigma
             self.H = H
             self.W = W
@@ -71,8 +78,10 @@ class Data(object):
                 kernelx = np.transpose(kernelx)
                 kernely = cv2.getGaussianKernel(self.H, self.sigma, cv2.CV_32F)
                 for i in range(3):
-                    img[:, :, i] = signal.convolve2d(img[:, :, i], kernelx, mode = 'same', boundary = 'fill', fillvalue = 0)
-                    img[:, :, i] = signal.convolve2d(img[:, :, i], kernely, mode = 'same', boundary = 'fill', fillvalue = 0)
+                    img[:, :, i] = signal.convolve2d(
+                        img[:, :, i], kernelx, mode='same', boundary='fill', fillvalue=0)
+                    img[:, :, i] = signal.convolve2d(
+                        img[:, :, i], kernely, mode='same', boundary='fill', fillvalue=0)
                 img = Image.fromarray(np.uint8(img))
             return img
 
@@ -83,43 +92,40 @@ class Data(object):
             time = os.path.basename(modelpath)[:-6]
             tmpdir = os.path.join("/wangshuo/zhaox/.tmp", time, name)
             os.system('mkdir -p %s' % tmpdir)
-            # os.system("rm %s -rf" % os.path.join(tmpdir, '*'))
             classes = [cl for cl in classes if cl not in self.ignore_classes]
             for cl in classes:
-                os.system('ln %s %s -s' % (os.path.join(combinepath, cl), os.path.join(tmpdir, cl)))
+                os.system('ln %s %s -s' %
+                          (os.path.join(combinepath, cl), os.path.join(tmpdir, cl)))
             combinepath = tmpdir
         return combinepath
 
     def load(self):
-        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform = ToTensor()) for name in self.setnames}
-        # traintypes = [os.path.basename(filename[0]).split('_')[1] for filename in image_datasets['train'].samples]
-        # typecnter = Counter(traintypes)
-        # weights = [self.type_weights[traintype] / typecnter[traintype] for traintype in traintypes]
-        # trainsampler = BatchSampler(WeightedRandomSampler(weights, self.num_batch * self.batch_size, replacement = True), batch_size = self.batch_size, drop_last = True)
-        trainloader = DataLoader(image_datasets['train'], shuffle = True, batch_size = self.batch_size)
-        testloader = DataLoader(image_datasets['test'])
+        image_datasets = {name: ImageFolder(self._pseudo_path(
+            self.path, name), transform=ToTensor()) for name in self.setnames}
+        trainloader = DataLoader(
+            image_datasets['train'], shuffle=True, batch_size=self.batch_size)
+        testloader = DataLoader(image_datasets['test'], shuffle=True)
         return {'train': trainloader, 'test': testloader}
-    
+
+
 class Evaluation(object):
     def __init__(self):
         pass
 
-    def predict(self, net, loader, K):
-        if loader.batch_sampler:
-            length = sum([len(batch) for batch in list(loader.batch_sampler)])
-        else:
-            length = len(loader) * loader.batch_size 
-        Y = np.zeros((length, K))
-        Yhat = np.zeros((length, K))
+    def predict(self, net, loader, K, subsample):
+        Y = np.zeros((0, K))
+        Yhat = np.zeros((0, K))
         with torch.no_grad():
-            i = 0
-            for x, y in loader:
-                x = x.to('cuda', dtype = torch.float)
-                Y[i:i + len(y), :] = torch.nn.functional.one_hot(y, num_classes = K)
-                yhat = torch.softmax(net(x), dim = 1).cpu()
-                Yhat[i:i + len(y), :] = yhat
-                i += len(y)
-        accu = np.mean(np.equal(np.argmax(Y, axis = 1), np.argmax(Yhat, axis = 1)))
+            J = len(loader)
+            for j, (x, y) in enumerate(loader):
+                x = x.to('cuda', dtype=torch.float)
+                y = torch.nn.functional.one_hot(y, num_classes=K)
+                Y = np.vstack([Y, y.numpy()])
+                yhat = torch.softmax(net(x), dim=1).cpu()
+                Yhat = np.vstack([Yhat, yhat.numpy()])
+                if j == int(J * subsample):
+                    break
+        accu = np.mean(np.equal(np.argmax(Y, axis=1), np.argmax(Yhat, axis=1)))
         return Y, Yhat, accu
 
     def plot_roc_auc(self, data):
@@ -130,30 +136,32 @@ class Evaluation(object):
             Yhat = data[name + 'Yhat']
             fpr, tpr, _ = metrics.roc_curve(Y.ravel(), Yhat.ravel())
             auc = metrics.auc(fpr, tpr)
-            ax.plot(fpr, tpr, c = colors[i], lw = 1, alpha = 0.7, label = u'%sAUC=%.3f' % (name, auc))
-        ax.plot((0, 1), (0, 1), c = '#808080', lw = 1, ls = '--', alpha = 0.7)
+            ax.plot(fpr, tpr, c=colors[i], lw=1, alpha=0.7,
+                    label=u'%sAUC=%.3f' % (name, auc))
+        ax.plot((0, 1), (0, 1), c='#808080', lw=1, ls='--', alpha=0.7)
         ax.set_xlim((-0.01, 1.02))
         ax.set_ylim((-0.01, 1.02))
         ax.set_xticks(np.arange(0, 1.1, 0.1))
         ax.set_yticks(np.arange(0, 1.1, 0.1))
         ax.set_xlabel('False Positive Rate')
         ax.set_ylabel('True Positive Rate')
-        ax.grid(b = True, ls = ':')
+        ax.grid(b=True, ls=':')
         plt.legend()
-        plt.savefig(plotpath) 
-    
-    def printplot(self, net, loaders, K):
+        plt.savefig(plotpath)
+
+    def printplot(self, net, loaders, K, subsample):
         data = {'names': list(loaders.keys())}
         accus = {}
         for key, loader in loaders.items():
-            Y, Yhat, accu = self.predict(net, loader, K)
+            Y, Yhat, accu = self.predict(net, loader, K, subsample)
             data[key + 'Y'] = Y
             data[key + 'Yhat'] = Yhat
             accus[key] = accu
         io.savemat(matpath, data)
         self.plot_roc_auc(data)
         for name in data['names']:
-            print('Accuracy in %s = %.6f' % (name, accus[name]))
+            print_to_out('Accuracy in %s = %.6f' % (name, accus[name]))
+
 
 class Prefetcher():
     def __init__(self, loader):
@@ -169,17 +177,18 @@ class Prefetcher():
             self.next_target = None
             return
         with torch.cuda.stream(self.stream):
-            self.next_input = self.next_input.cuda(non_blocking = True)
-            self.next_target = self.next_target.cuda(non_blocking = True)
-            
+            self.next_input = self.next_input.cuda(non_blocking=True)
+            self.next_target = self.next_target.cuda(non_blocking=True)
+
     def next(self):
         torch.cuda.current_stream().wait_stream(self.stream)
         X, Y = self.next_input, self.next_target
         self.preload()
         return [X, Y]
 
+
 class Train(object):
-    def __init__(self, path, iters, K, pretrain, lr, batch_size, type_weights, loss_weights = None, gamma = 0, smoothing = 0, step = 3, ignore_classes = []):
+    def __init__(self, path, iters, K, pretrain, lr, batch_size, gpus, type_weights=None, loss_weights=None, gamma=0, smoothing=0, step=3, ignore_classes=[], subsample=1):
         self.path = path
         self.iters = iters
         self.K = K
@@ -192,101 +201,86 @@ class Train(object):
         self.smoothing = smoothing
         self.step = step
         self.ignore_classes = ignore_classes
+        self.subsample = subsample
+        self.gpus = gpus
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.densenet121(pretrained = True)
-            # for p in net.parameters():
-            #     p.requires_grad = False
-            # for p in net.features.denseblock4.parameters():
-            #     p.requires_grad = True
-            net.classifier = torch.nn.Linear(in_features = 1024, out_features = self.K, bias = True)
+            net = torchvision.models.resnet18(pretrained=True)
+            net.fc = torch.nn.Linear(in_features=512, out_features=self.K)
         else:
-            net = torchvision.models.densenet121(num_classes = self.K)
-        # net = torch.nn.DataParallel(net, device_ids=[1, 2])
+            net = torchvision.models.resnet34(num_classes=self.K)
+        net = torch.nn.DataParallel(net, device_ids=self.gpus)
         net = net.cuda()
         return net
 
-    def _load_weights(self, loader):
-        if self.loss_weights is not None:
-            class2idx = loader.dataset.class_to_idx
-            weights = [0 for _ in range(self.K)]
-            for key in class2idx:
-                weights[class2idx[key]] = self.type_weights[key]
-        else:
-            weights = 1
-        return weights
 
-    def _load_loss_opt(self, net, weights):
-        loss = Loss(self.K, self.smoothing, self.gamma, weights)
-        optimizer = torch.optim.Adamax(net.parameters(), lr = self.lr)
-        return loss, optimizer
-
-    def _call_back(self, i, net, loaders, costs):
+    def _call_back(self, i, net, loaders, costs, loss, subsample):
         if i % self.step == 0:
-            print("Costs after iter %d: %.3f" % (i, costs))
-            # _, testYhat, testaccu = Evaluation().predict(net, loaders['test'], self.K)
-            # _, trainYhat, trainaccu = Evaluation().predict(net, loaders['train'], self.K)
-            # print("Accuracy after iteration %d: train %.3f; test %.3f" % (i, trainaccu, testaccu))
-            # print("Yhat sample in test:")
-            # print(testYhat)
-            # print("Yhat sample in train:")
-            # print(trainYhat)
+            testcosts = 0
+            with torch.no_grad():
+                J = len(loaders['test'])
+                for j, (x, y) in enumerate(loaders['test']):
+                    net.eval()
+                    x = x.cuda(); y = y.cuda()
+                    testcosts += float(loss(net(x), y))
+                    if j == int(J * subsample):
+                        break
+            print_to_out("%d:\ttrcost: %.6f\ttscost: %.6f" % (i, costs, testcosts))
 
     def train(self):
-        loaders = Data(self.path, self.batch_size, self.type_weights, self.ignore_classes).load()
+        loaders = Data(self.path, self.batch_size,
+                       self.type_weights, self.ignore_classes).load()
         loader = loaders['train']
         net = self._load_net()
-        weights = self._load_weights(loader)
-        loss, opt = self._load_loss_opt(net, weights)
+        loss = Loss(self.K, self.smoothing, self.gamma)
+        opt = torch.optim.Adamax(net.parameters(), lr=self.lr)
         for i in range(1, self.iters + 1):
+            if i % 30 == 0:
+                self.lr /= 10
+                opt = torch.optim.Adamax(net.parameters(), lr=self.lr)
             costs = 0
-            for x, y in loader:
+            J = len(loader)
+            net.train()
+            for j, (x, y) in enumerate(loader):
                 x = x.cuda(); y = y.cuda()
                 opt.zero_grad()
                 cost = loss(net(x), y)
                 cost.backward()
                 costs += float(cost)
                 opt.step()
-            self._call_back(i, net, loaders, costs)
+                if j == int(J * self.subsample):
+                    break
+            self._call_back(i, net, loaders, costs, loss, self.subsample)
         torch.save(net, modelpath)
-        Evaluation().printplot(net, loaders, self.K)
+        net.eval()
+        Evaluation().printplot(net, loaders, self.K, self.subsample)
         return net
+
 
 global modelpath
 global plotpath
 global matpath
+global outfile
 modelpath = sys.argv[1]
 plotpath = sys.argv[2]
-matpath = sys.argv[3]      
-
-type_weights = {
-    "jizhi": 1.5,
-    "tumor": 1.5,
-    "tumorln": 1,
-    "huaisi": 1
-    }
-
-loss_weights = {
-    "jizhi": 0,
-    "tumor": 0,
-    "tumorln": 0,
-    "huaisi": 0
-}
+matpath = sys.argv[3]
+outfile = sys.argv[4]
 
 params = {
-         "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/imagenet_normed",
-        "iters":    50,
-            "K":    4,
-     "pretrain":    True,
-           "lr":    0.0001,
-   "batch_size":    16,
- "type_weights":    type_weights,
- "loss_weights":    None,
-        "gamma":    0,
-    "smoothing":    0.001,
-         "step":    10,
-"ignore_classes":   []
+              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed",
+             "iters":    10,
+                 "K":    4,
+          "pretrain":    False,
+                "lr":    0.00001,
+        "batch_size":    32,
+      "loss_weights":    None,
+             "gamma":    0,
+         "smoothing":    0.001,
+              "step":    1,
+         "subsample":    0.3,
+    "ignore_classes":    [],
+              "gpus":    [0, 1, 2]
 }
 
 if __name__ == "__main__":
