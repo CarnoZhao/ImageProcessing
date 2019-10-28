@@ -117,8 +117,8 @@ class Data(object):
         return combinepath
 
     def load(self):
-        # image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform=ToTensor()) for name in self.setnames}
-        image_datasets = {name: H5Datasets(name) for name in self.setnames}
+        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform=ToTensor()) for name in self.setnames}
+        # image_datasets = {name: H5Datasets(name) for name in self.setnames}
         trainloader = DataLoader(
             image_datasets['train'], shuffle=True, batch_size=self.batch_size)
         testloader = DataLoader(image_datasets['test'], shuffle=True)
@@ -251,8 +251,11 @@ class Train(object):
         net = self._load_net()
         loss = Loss(self.K, self.smoothing, self.gamma)
         opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
-        scheduler = torch.optim.lr_scheduler.StepLR(opt, 10, 0.1)
+        # scheduler = torch.optim.lr_scheduler.StepLR(opt, 10, 0.1)
         for i in range(1, self.iters + 1):
+            # if i == 30:
+            #     self.lr /= 10
+            #     opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
             costs = 0; total = 0; correct = 0
             J = len(loader)
             net.train()
@@ -264,7 +267,7 @@ class Train(object):
                 cost.backward()
                 costs += float(cost); total += len(y)
                 correct += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
-                opt.step(); scheduler.step()
+                opt.step()# ; scheduler.step()
                 if j == int(J * self.subsample):
                     break
             self._call_back(i, net, loaders, loss, self.subsample, (costs, correct / total))
@@ -286,10 +289,10 @@ outfile = sys.argv[4]
 
 params = {
               "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets",
-             "iters":    20,
+             "iters":    60,
                  "K":    4,
           "pretrain":    True,
-                "lr":    0.0001,
+                "lr":    0.0000011,
         "batch_size":    64,
       "loss_weights":    None,
              "gamma":    0,
@@ -297,7 +300,7 @@ params = {
               "step":    1,
          "subsample":    1,
     "ignore_classes":    [],
-              "gpus":    [0, 1]
+              "gpus":    [0, 1, 2]
 }
 
 if __name__ == "__main__":
