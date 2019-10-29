@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 def get_unique(T):
-    T = T.numpy()
+    # T = T.numpy()
     unique_num = []
     index_list = []
     for i in range(T.shape[0]):
@@ -34,10 +34,12 @@ class SurvLoss(nn.Module):
         super(SurvLoss, self).__init__()
         pass
 
-    def forward(self, outs, T_E, T_T):
+    def forward(self, Yhat, Y):
+        T_E = Y > 0
+        T_T = torch.abs(Y)
         E = torch.squeeze(T_E)
         Y_c = torch.squeeze(T_T)
-        Y_hat_c = torch.squeeze(outs).double()
+        Y_hat_c = torch.squeeze(Yhat).double()
 
         Y_label_T = torch.abs(Y_c).double()
         E[E > 0] = 1
@@ -46,10 +48,10 @@ class SurvLoss(nn.Module):
         Obs = torch.sum(Y_label_E)
         Y_hat_hr = torch.exp(Y_hat_c)
         ljqh = get_cussum(Y_hat_hr)
-        Y_hat_cumsum = torch.log(torch.Tensor(ljqh))
+        Y_hat_cumsum = torch.log(torch.Tensor(ljqh)).cuda()
         unique_values, segment_ids = get_unique(Y_label_T)
-        loss_s2_v = torch.Tensor(get_segment_max(Y_hat_cumsum, segment_ids))
-        loss_s2_count = torch.Tensor(get_segment_sum(Y_label_E, segment_ids))
+        loss_s2_v = torch.Tensor(get_segment_max(Y_hat_cumsum, segment_ids)).cuda()
+        loss_s2_count = torch.Tensor(get_segment_sum(Y_label_E, segment_ids)).cuda()
 
         loss_s2 = torch.sum(torch.mul(loss_s2_v, loss_s2_count))
         loss_s1 = torch.sum(torch.mul(Y_hat_c, Y_label_E))

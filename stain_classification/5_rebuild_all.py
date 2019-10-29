@@ -288,11 +288,11 @@ matpath = sys.argv[3]
 outfile = sys.argv[4]
 
 params = {
-              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets",
-             "iters":    60,
+              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed",
+             "iters":    200,
                  "K":    4,
           "pretrain":    True,
-                "lr":    0.0000011,
+                "lr":    0.000001,
         "batch_size":    64,
       "loss_weights":    None,
              "gamma":    0,
@@ -300,7 +300,7 @@ params = {
               "step":    1,
          "subsample":    1,
     "ignore_classes":    [],
-              "gpus":    [0, 1, 2]
+              "gpus":    [0, 1]
 }
 
 if __name__ == "__main__":
