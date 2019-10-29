@@ -86,7 +86,29 @@ def load_data(h5path, csvpath):
     hosi = {h: np.array(csv.number[np.equal(csv.hosi, h)]) for h in ['ZF', 'GX']}
     return pats, label, data, hosi
 
-def main(h5path, csvpath, lr, epochs, batch_size):
+def call_back(i, step, net, data, loaders):
+    if i % step != 0:
+        return
+    net.eval()
+    out = "%d" % i
+    with torch.no_grad():
+        for name, loader in loaders.items():
+            Y = np.zeros(len(loader.dataset))
+            Yhat = np.zeros(len(loader.dataset))
+            i = 0
+            for pats, y in loader:
+                Y[i: i + len(y)] = y
+                for p in pats:
+                    pdata = data[int(p)]
+                    pyhat = net(torch.FloatTensor(pdata).cuda())
+                    preds = torch.max(pyhat, dim = 0).values
+                    Yhat[i] = float(preds)
+                    i += 1
+            ci = concordance_index(np.abs(Y), -1 * Yhat, np.sign(Y))
+            out += " | %s: %.3f" % (name, ci)
+    print_to_out(out)
+
+def main(h5path, csvpath, p, lr, epochs, batch_size, step):
     
     ## load_data
     pats, label, data, hosi = load_data(h5path, csvpath)
@@ -97,15 +119,19 @@ def main(h5path, csvpath, lr, epochs, batch_size):
     # trainloader = DataLoader(traindataset, batch_size = len(traindataset), shuffle = True)
     testdataset = Datasets(pats, label, hosi, False)
     testloader = DataLoader(testdataset)
+    loaders = {"train": trainloader, "test": testloader}
 
     ## pre parameter
-    net = Net([128], 0).cuda()
+    net = Net([128], p).cuda()
     loss = SurvLoss()
     # opt = torch.optim.Adamax(net.parameters(), lr = lr)
     opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True)
 
     ## iteration
-    for i in range(epochs):
+    for i in range(1, epochs + 1):
+        if i % 120 == 0:
+            lr /= 10
+            opt = torch.optim.Adamax(net.parameters(), lr = lr)
         costs = 0
         for pats, y in trainloader:
             x = torch.zeros((len(pats), 512)).cuda()
@@ -127,25 +153,9 @@ def main(h5path, csvpath, lr, epochs, batch_size):
             cost.backward()
             costs += float(cost)
             opt.step()
-        if i % 10 == 0:          
-            print_to_out("%d | costs: %.3f" % (i, costs))
+        call_back(i, step, net, data, loaders)
 
-    ## evalu
-    with torch.no_grad():
-        for loader in [trainloader, testloader]:
-            Y = np.zeros(len(loader.dataset))
-            Yhat = np.zeros(len(loader.dataset))
-            i = 0
-            for pats, y in loader:
-                Y[i: i + len(y)] = y
-                for p in pats:
-                    pdata = data[int(p)]
-                    pyhat = net(torch.FloatTensor(pdata).cuda())
-                    preds = torch.max(pyhat, dim = 0).values
-                    Yhat[i] = float(preds)
-                    i += 1
-            ci = concordance_index(np.abs(Y), -1 * Yhat, np.sign(Y))
-            print_to_out("ci = %.3f" % ci)
+    call_back(0, step, net, data, loaders)
 
     ## save
     torch.save(net, modelpath)
@@ -158,8 +168,10 @@ if __name__ == "__main__":
     params = {
         "h5path": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/computed_data.h5",
         "csvpath": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/merged.csv",
-        "lr": 1e-4,
-        "epochs": 100,
+        "lr": 1e-3,
+        "epochs": 500,
         "batch_size": 64,
+        "step": 10,
+        "p": 0.8
     }
     main(**params)
