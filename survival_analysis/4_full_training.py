@@ -122,26 +122,21 @@ class Data(object):
         return loaders, self.mapdic, self.data
 
 class SurvNet(torch.nn.Module):
-    def __init__(self, savedmodel, mid_layer = 256, p = 0.5):
+    def __init__(self, savedmodel, savedmodel2):
         super(SurvNet, self).__init__()
         self.prenet = torch.load(savedmodel)
-        self.prenet.fc = torch.nn.Linear(in_features = 512, out_features = mid_layer, bias = True)
-        self.tanh1 = torch.nn.Tanh()
-        self.drop = torch.nn.DropOut(p)
-        self.fc2 = torch.nn.Linear(in_features = mid_layer, out_features = 1, bias = True)
-        self.tanh2 = torch.nn.Tanh()
+        self.prenet.fc = torch.nn.Identity()
+        self.postnet = torch.load(savedmodel2)
 
     def forward(self, x):
         x = self.prenet(x)
-        x = self.tanh1(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.tanh2(x)
+        x = self.postnet(x)
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path, infopath, figpath, lr, batch_size, epochs, gpus = [0], lrstep = 100, cbstep = 10):
+    def __init__(self, savedmodel, savedmodel2, h5path, infopath, lr, batch_size, epochs, gpus = [0], lrstep = 100, cbstep = 10, figpath = None):
         self.savedmodel = savedmodel
+        self.savedmodel2 = savedmodel2
         self.gpus = gpus
         self.net = self.__load_net()
         self.loss = SurvLoss()
@@ -151,7 +146,6 @@ class Train(object):
         self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True)
         self.lrstep = lrstep
         self.cbstep = cbstep
-        # TODO
 
     def __lr_step(self, i):
         if i % self.lrstep == 0 and i != 0:
@@ -159,7 +153,7 @@ class Train(object):
             self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True)
 
     def __load_net(self):
-        net = SurvNet(self.savedmodel)
+        net = SurvNet(self.savedmodel, self.savedmodel2)
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
         net = net.cuda()
         return net
@@ -213,9 +207,20 @@ class Train(object):
             self.__call_back(i)
             self.__lr_step(i)
 
-
-
-
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
+
+    params = {
+        "savedmodel": "",
+        "savedmodel2": "",
+        "h5path": "",
+        "infopath": "",
+        "figpath": "",
+        "lr": 1e-7,
+        "batch_size": 64,
+        "epochs": 50,
+        "gpus": [0],
+        "lrstep": 20,
+        "cbstep": 10,
+    }

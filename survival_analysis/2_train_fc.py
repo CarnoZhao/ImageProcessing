@@ -62,15 +62,17 @@ class Net(torch.nn.Module):
     def __init__(self, layers, p):
         super(Net, self).__init__()
         self.fc1 = torch.nn.Linear(in_features = 512, out_features = layers[0], bias = True)
+        self.th1 = torch.nn.Tanh()
         self.dr1 = torch.nn.Dropout(p)
         self.fc2 = torch.nn.Linear(in_features = layers[0], out_features = 1, bias = True)
+        self.th2 = torch.nn.Tanh()
 
     def forward(self, x):
         x = self.fc1(x)
-        x = torch.nn.Tanh()(x)
+        x = self.th1(x)
         x = self.dr1(x)
         x = self.fc2(x)
-        x = torch.nn.Tanh()(x)
+        x = self.th2(x)
         return x
 
 def print_to_out(*args):
@@ -198,14 +200,15 @@ def main(h5path, csvpath, p, lr, l, epochs, batch_size, step, weight_decay):
 
     net = Net([l], p).cuda()
     loss = SurvLoss()
-    # opt = torch.optim.Adamax(net.parameters(), lr = lr)
-    opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
+    opt = torch.optim.Adamax(net.parameters(), lr = lr, weight_decay = weight_decay)
+    # opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
 
     ## iteration
     for i in range(1, epochs + 1):
-        if i % 250 == 0:
-            lr /= 10
-            opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
+        # if i % 250 == 0:
+        #     lr /= 10
+        #     opt = torch.optim.Adamax(net.parameters(), lr = lr, weight_decay = weight_decay)
+        #     # opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
         costs = 0
         for ps, y in trainloader:
             x = torch.zeros((len(ps), 512)).cuda()
@@ -230,6 +233,7 @@ def main(h5path, csvpath, p, lr, l, epochs, batch_size, step, weight_decay):
         call_back(i, step, net, data, loaders)
 
     ret = call_back(0, step, net, data, loaders)
+    torch.save(net, modelpath)
 
 
 if __name__ == "__main__":
@@ -243,13 +247,13 @@ if __name__ == "__main__":
     params = {
         "h5path": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/computed_data.h5",
         "csvpath": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/merged.csv",
-        "lr": 1.502e-3,
-        "epochs": 700,
+        "lr": 1e-5,
+        "epochs": 500,
         "batch_size": 64,
         "step": 10,
-        "p": 0.42,
-        "l": 100,
-        "weight_decay": 3.883e-6,
+        "p": 0.6,
+        "l": 128,
+        "weight_decay": 1e-3,
     }
     main(**params)
     # print_to_out("")
