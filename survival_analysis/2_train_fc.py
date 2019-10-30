@@ -41,12 +41,15 @@ class SurvLoss(torch.nn.Module):
 class Datasets(Dataset):
     def __init__(self, pats, label, hosi, istrain, K = None, k = None):
         super(Datasets, self).__init__()
+        # if istrain == 'train':
+        #     self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
+        #     self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
+        # elif istrain == 'val':
+        #     self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
+        #     self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
         if istrain == 'train':
-            self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
-            self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
-        elif istrain == 'val':
-            self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
-            self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
+            self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF']]
+            self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF']]
         else:
             self.pats = [p for p in pats if p in hosi['GX']]
             self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['GX']]
@@ -119,10 +122,10 @@ def call_back(i, step, net, data, loaders):
             ci = concordance_index(np.abs(Y), -1 * Yhat, np.sign(Y))
             out += " | %s: %.3f" % (name, ci)
             ret.append(ci)
-    # print_to_out(out)
+    print_to_out(out)
     return ret
 
-def main(h5path, csvpath, p, lr, l, K, epochs, batch_size, step, weight_decay):
+def kfold_main(h5path, csvpath, p, lr, l, K, epochs, batch_size, step, weight_decay):
     
     ## load_data
     print_to_out("lr : %.3e" % lr)
@@ -184,27 +187,75 @@ def main(h5path, csvpath, p, lr, l, K, epochs, batch_size, step, weight_decay):
     ## save
     # torch.save(net, modelpath)
     return ret
-    
+
+def main(h5path, csvpath, p, lr, l, epochs, batch_size, step, weight_decay):
+    print_to_out("lr : %.3e" % lr)
+    print_to_out("dropout_p: %.3f" % p)
+    print_to_out("mid_layer: %d" % l)
+    print_to_out("weight_decay: %.3e" % weight_decay)
+    pats, label, data, hosi = load_data(h5path, csvpath)
+
+    ## laoder
+    traindataset = Datasets(pats, label, hosi, 'train')
+    trainloader = DataLoader(traindataset, batch_size = batch_size, shuffle = True)
+    testdataset = Datasets(pats, label, hosi, 'test')
+    testloader = DataLoader(testdataset)
+    loaders = {'train': trainloader, 'test': testloader}
+
+    net = Net([l], p).cuda()
+    loss = SurvLoss()
+    # opt = torch.optim.Adamax(net.parameters(), lr = lr)
+    opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
+
+    ## iteration
+    for i in range(1, epochs + 1):
+        if i % 250 == 0:
+            lr /= 10
+            opt = torch.optim.SGD(net.parameters(), lr = lr, momentum = 0.9, nesterov = True, weight_decay = weight_decay)
+        costs = 0
+        for ps, y in trainloader:
+            x = torch.zeros((len(ps), 512)).cuda()
+            y = y.cuda()
+
+            # select instance
+            net.eval()
+            for j, pat in enumerate(ps):
+                pdata = data[int(pat)]
+                pyhat = net(torch.FloatTensor(pdata).cuda())
+                maxidx = torch.argmax(pyhat)
+                x[j] = torch.Tensor(pdata[maxidx])
+
+            # train
+            net.train()
+            yhat = net(x)
+            opt.zero_grad()
+            cost = loss(yhat, y)
+            cost.backward()
+            costs += float(cost)
+            opt.step()
+        call_back(i, step, net, data, loaders)
+
+    ret = call_back(0, step, net, data, loaders)
+
 
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-    for rep in range(300):
-        lr = 10 ** (np.random.random() * 3 - 5)
-        p = np.random.random() * 0.8
-        l = np.random.randint(100, 300)
-        weight_decay = 10 ** (np.random.random() * 3 - 7)
-        params = {
-            "h5path": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/computed_data.h5",
-            "csvpath": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/merged.csv",
-            "lr": lr,
-            "epochs": 700,
-            "batch_size": 64,
-            "step": 10,
-            "p": p,
-            "l": l,
-            "weight_decay": weight_decay,
-            "K": 3
-        }
-        main(**params)
-        print_to_out("")
+    # for rep in range(300):
+    #     lr = 10 ** (np.random.random() * 3 - 5)
+    #     p = np.random.random() * 0.8
+    #     l = np.random.randint(100, 300)
+    #     weight_decay = 10 ** (np.random.random() * 3 - 7)
+    params = {
+        "h5path": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/computed_data.h5",
+        "csvpath": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/merged.csv",
+        "lr": 1.94e-4,
+        "epochs": 700,
+        "batch_size": 64,
+        "step": 10,
+        "p": 0.36,
+        "l": 237,
+        "weight_decay": 2.67e-6,
+    }
+    main(**params)
+    # print_to_out("")
