@@ -41,12 +41,6 @@ class SurvLoss(torch.nn.Module):
 class Datasets(Dataset):
     def __init__(self, pats, label, hosi, istrain, K = None, k = None):
         super(Datasets, self).__init__()
-        # if istrain == 'train':
-        #     self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
-        #     self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and not self.__val_check(i, k, K, len(pats))]
-        # elif istrain == 'val':
-        #     self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
-        #     self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF'] and self.__val_check(i, k, K, len(pats))]
         if istrain == 'train':
             self.pats = [p for i, p in enumerate(pats) if p in hosi['ZF']]
             self.label = [label[i] for i in range(len(label)) if pats[i] in hosi['ZF']]
@@ -119,7 +113,7 @@ def call_back(i, step, net, data, loaders):
                     preds = torch.max(pyhat, dim = 0).values
                     Yhat[i] = float(preds)
                     i += 1
-            ci = concordance_index(np.abs(Y), -1 * Yhat, np.sign(Y))
+            ci = concordance_index(np.abs(Y), -1 * Yhat, np.where(Y > 0, 1, 0))
             out += " | %s: %.3f" % (name, ci)
             ret.append(ci)
     print_to_out(out)
@@ -249,13 +243,13 @@ if __name__ == "__main__":
     params = {
         "h5path": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/computed_data.h5",
         "csvpath": "/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/merged.csv",
-        "lr": 1.94e-4,
+        "lr": 1.502e-3,
         "epochs": 700,
         "batch_size": 64,
         "step": 10,
-        "p": 0.36,
-        "l": 237,
-        "weight_decay": 2.67e-6,
+        "p": 0.42,
+        "l": 100,
+        "weight_decay": 3.883e-6,
     }
     main(**params)
     # print_to_out("")
