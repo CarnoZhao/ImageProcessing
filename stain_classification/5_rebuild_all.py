@@ -25,7 +25,7 @@ def print_to_out(*args):
 
 
 class Loss(torch.nn.Module):
-    def __init__(self, K, smoothing=0.0, gamma=0, weights=1):
+    def __init__(self, K, smoothing=0.0, gamma=0):
         super(Loss, self).__init__()
         self.criterion = torch.nn.KLDivLoss()
         self.confidence = 1.0 - smoothing
@@ -79,19 +79,16 @@ class Evaluation(object):
     def __init__(self):
         pass
 
-    def predict(self, net, loader, K, subsample):
+    def predict(self, net, loader, K):
         Y = np.zeros((0, K))
         Yhat = np.zeros((0, K))
         with torch.no_grad():
-            J = len(loader)
             for j, (x, y) in enumerate(loader):
                 x = x.to('cuda', dtype=torch.float)
                 y = torch.nn.functional.one_hot(y, num_classes=K)
                 Y = np.vstack([Y, y.numpy()])
                 yhat = torch.softmax(net(x), dim=1).cpu()
                 Yhat = np.vstack([Yhat, yhat.numpy()])
-                if j == int(J * subsample):
-                    break
         accu = np.mean(np.equal(np.argmax(Y, axis=1), np.argmax(Yhat, axis=1)))
         return Y, Yhat, accu
 
@@ -116,11 +113,11 @@ class Evaluation(object):
         plt.legend()
         plt.savefig(plotpath)
 
-    def printplot(self, net, loaders, K, subsample):
+    def printplot(self, net, loaders, K):
         data = {'names': list(loaders.keys())}
         accus = {}
         for key, loader in loaders.items():
-            Y, Yhat, accu = self.predict(net, loader, K, subsample)
+            Y, Yhat, accu = self.predict(net, loader, K)
             data[key + 'Y'] = Y
             data[key + 'Yhat'] = Yhat
             accus[key] = accu
@@ -146,68 +143,56 @@ class Evaluation(object):
 
 
 class Train(object):
-    def __init__(self, path, iters, K, pretrain, lr, batch_size, gpus, type_weights=None, loss_weights=None, gamma=0, smoothing=0, step=3, ignore_classes=[], subsample=1):
-        self.path = path
+    def __init__(self, h5path, iters, K, pretrain, lr, batch_size, gpus, gamma = 0, smoothing = 0, step = 3):
+        self.h5path = h5path
         self.iters = iters
         self.K = K
         self.pretrain = pretrain
         self.lr = lr
         self.batch_size = batch_size
-        self.type_weights = type_weights
-        self.loss_weights = loss_weights
         self.gamma = gamma
         self.smoothing = smoothing
         self.step = step
-        self.ignore_classes = ignore_classes
-        self.subsample = subsample
         self.gpus = gpus
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.resnet18(pretrained=True)
-            net.fc = torch.nn.Linear(in_features=512, out_features=self.K)
+            net = torchvision.models.resnet18(pretrained = True)
+            net.fc = torch.nn.Linear(in_features=512, out_features = self.K)
         else:
-            net = torchvision.models.resnet18(num_classes=self.K)
-        net = torch.nn.DataParallel(net, device_ids=self.gpus)
+            net = torchvision.models.resnet18(num_classes = self.K)
+        net = torch.nn.DataParallel(net, device_ids = self.gpus)
         net = net.cuda()
         return net
 
 
-    def _call_back(self, i, net, loaders, loss, subsample, trainresult):
-        traincosts, trainaccu = trainresult
-        if i == 0:
-            print_to_out("\t|")
-        if i % self.step == 0:
-            testcosts = 0
-            correct = 0
-            total = 0
-            with torch.no_grad():
-                J = len(loaders['test'])
-                for j, (x, y) in enumerate(loaders['test']):
-                    net.eval()
+    def _call_back(self, i, net, loaders, loss):
+        if i % self.step != 0:
+            return 
+        net.eval()
+        out = "%d" % i
+        with torch.no_grad():
+            for name, loader in loaders.items():
+                a = b = 0
+                for x, y in loader:
                     x = x.cuda(); y = y.cuda()
                     yhat = net(x)
-                    total += len(y)
-                    correct += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
-                    testcosts += float(loss(yhat, y))
-                    if j == int(J * subsample):
-                        break
-            print_to_out("%d\t| train: cost: %.3f  accuracy: %.3f | test: cost: %.3f  accuracy: %.3f" % (i, traincosts, trainaccu, testcosts, correct / total))
+                    a += len(y)
+                    b += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
+                out += " | %s: %.4f" % (name, b / a)
+        print_to_out(out)
+            
 
     def train(self):
-        loaders = Data(self.path, self.batch_size,
-                       self.type_weights, self.ignore_classes).load()
+        loaders = Data(self.h5path).load(self.batch_size)
         loader = loaders['train']
         net = self._load_net()
         loss = Loss(self.K, self.smoothing, self.gamma)
         opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
-        # scheduler = torch.optim.lr_scheduler.StepLR(opt, 10, 0.1)
         for i in range(1, self.iters + 1):
-            # if i == 30:
-            #     self.lr /= 10
-            #     opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
-            costs = 0; total = 0; correct = 0
-            J = len(loader)
+            if i == 50:
+                self.lr /= 10
+                opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
             net.train()
             for j, (x, y) in enumerate(loader):
                 x = x.cuda(); y = y.cuda()
@@ -215,41 +200,28 @@ class Train(object):
                 opt.zero_grad()
                 cost = loss(yhat, y)
                 cost.backward()
-                costs += float(cost); total += len(y)
-                correct += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
-                opt.step()# ; scheduler.step()
-                if j == int(J * self.subsample):
-                    break
-            self._call_back(i, net, loaders, loss, self.subsample, (costs, correct / total))
+                opt.step()
+            self._call_back(i, net, loaders, loss)
         torch.save(net, modelpath)
         net.eval()
-        Evaluation().printplot(net, loaders, self.K, self.subsample)
+        Evaluation().printplot(net, loaders, self.K)
         Evaluation().cnter(matpath, self.K)
         return net
 
 
-global modelpath
-global plotpath
-global matpath
-global outfile
-modelpath = sys.argv[1]
-plotpath = sys.argv[2]
-matpath = sys.argv[3]
-outfile = sys.argv[4]
+global modelpath; global plotpath; global matpath; global outfile
+modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
 params = {
-              "path": "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/self_normed",
+              "h5path": "/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/compiled.h5",
              "iters":    200,
                  "K":    4,
           "pretrain":    True,
                 "lr":    0.000001,
         "batch_size":    64,
-      "loss_weights":    None,
              "gamma":    0,
          "smoothing":    0.001,
               "step":    1,
-         "subsample":    1,
-    "ignore_classes":    [],
               "gpus":    [0, 1]
 }
 
