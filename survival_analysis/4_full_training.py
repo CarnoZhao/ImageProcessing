@@ -49,75 +49,35 @@ class SurvLoss(torch.nn.Module):
         loss = torch.div(torch.sub(loss2, loss1), obs)
         return loss
 
-class H5Datasets(torch.utils.data.Dataset):
-    def __init__(self, pats, patdic):
-        super(H5Datasets, self).__init__()
-        self.pats = pats
-        self.label = [patdic[pat] for pat in self.pats]
-        self.length = len(self.pats)
+class SurvDataset(torch.utils.data.Dataset):
+    def __init__(self, nameidx, set_pat):
+        super(SurvDataset, self).__init__()
+        pat = set_pat == nameidx
+        self.index = np.array(list(range(len(pat))))[pat]
+        self.label = label
+        self.length = len(self.index)
 
     def __getitem__(self, i):
-        return self.pats[i], self.label[i]
+        return self.index[i], self.label[self.index[i]]
 
     def __len__(self):
         return self.length
       
 class Data(object):
-    def __init__(self, h5path, infopath, figpath = None):
-        self.h5path = h5path
-        self.infopath = infopath
-        if not os.path.exists(self.h5path):
-            self.__make_h5(figpath)
-        self.h5 = h5py.File(self.h5path, 'r')
-        self.data = self.h5['data']
-        self.pats = self.h5['pat']
-        self.tp = self.h5['tp']
-        self.hosi = self.h5['hosi']
-        info = pd.read_csv(self.infopath)
-        self.patdic = {info.number[i]: info.time[i] * 30 * (1 if info.event[i] > 0 else -1) for i in range(len(info))}
-        self.mapdic = {}
-        for i, pat in enumerate(self.pats):
-            if pat not in self.patdic:
-                continue
-            if pat not in self.mapdic:
-                self.mapdic[pat] = [i]
-            else:
-                self.mapdic[pat].append(i)
-        for pat in self.mapdic:
-            self.mapdic[pat] = np.array(self.mapdic[pat])
-        self.pats = list(self.mapdic.keys())
-
-    def __make_h5(self, figpath):
-        tpdic = {'huaisi': 0, 'jizhi': 1, 'tumor': 2, 'tumorln': 3}
-        tiffiles = [f.strip() for f in os.popen("find %s -name \"*.tif\"" % figpath)]
-        pat = [eval(os.path.basename(f).split('_')[0]) for f in tiffiles]
-        tp = [tpdic[os.path.basename(f).split('_')[1]] for f in tiffiles]
-        hosi = [1 if os.path.basename(f).split('_')[3] == 'ZF' else 0 for f in tiffiles]
-        h5 = h5py.File(self.h5path, 'w')
-        h5.create_dataset('pat', data = np.array(pat))
-        h5.create_dataset('tp', data = np.array(tp))
-        h5.create_dataset('hosi', data = np.array(hosi))
-        img = cv2.imread(tiffiles[0])[:, :, ::-1]
-        h5.create_dataset('data', shape = (len(tiffiles), img.shape[-1], *img.shape[:2]))
-        for i, tif in enumerate(tiffiles):
-            img = cv2.imread(tif)[:, :, ::-1].transpose((2, 0, 1)) / 255
-            h5['data'][i, :, :, :] = img
-        h5.close()
+    def __init__(self, h5path):
+        h5 = h5py.File(h5path, 'r')
+        self.set_pat = h5['set_pat'][:]
+        self.pat_fig = h5['pat_fig'][:]
+        self.tps = h5['tps'][:]
+        self.label = h5['label'][:]
+        self.data = h5['data']
+        self.names = ['train', 'val', 'test']
 
     def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
-        np.random.shuffle(self.pats)
-        trainpats = self.pats[:int(ratio[0] * len(self.pats))]
-        valpats = self.pats[int(ratio[0] * len(self.pats)):int((ratio[0] + ratio[1]) * len(self.pats))]
-        testpats = self.pats[int((ratio[0] + ratio[1]) * len(self.pats)):]
-        namepats = {'train': trainpats, 'val': valpats, 'test': testpats}
-        io.savemat(matpath, namepats)
-        namesets = {name: H5Datasets(namepats[name], self.patdic) for name in namepats}
-        loaders = {name: torch.utils.data.DataLoader(
-            namesets[name], 
-            batch_size = batch_size if name == 'train' else 1,
-            shuffle = name == 'train')
-            for name in namesets}
-        return loaders, self.mapdic, self.data
+        datasets = {name: SurvDataset(i, self.set_pat) for i, name in enumerate(self.names)}
+        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
+        mapdic = {i: np.array(list(range(len(self.pat_fig[i]))))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
+        return loaders, mapdic, self.data
 
 class SurvNet(torch.nn.Module):
     def __init__(self, savedmodel, savedmodel2):

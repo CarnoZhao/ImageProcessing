@@ -42,87 +42,37 @@ class Loss(torch.nn.Module):
         self.true_dist = true_dist
         return self.criterion(Yhat, torch.autograd.Variable(true_dist, requires_grad = False))
 
-class H5Datasets(torch.utils.data.Dataset):
-        def __init__(self, name):
-            super(H5Datasets, self).__init__()
-            path = '/wangshuo/zhaox/ImageProcessing/stain_classification/_data/h5'
-            filename = os.path.join(path, name + ".h5")
-            self.h5 = h5py.File(filename)
-            self.data = self.h5['data']
-            self.label = self.h5['label']
+class ClassifierDataset(torch.utils.data.Dataset):
+    def __init__(self, nameidx, set_pat, pat_fig, data, tps):
+        super(ClassifierDataset, self).__init__()
+        pat = set_pat == nameidx
+        fig = np.sum(pat_fig[pat], axis = 0, dtype = np.bool)
+        self.index = np.array(list(range(len(fig))))[fig]
+        self.data = data
+        self.tps = tps
+        self.length = len(self.index)
 
-        def __getitem__(self, i):
-            x = self.data[i] / 255
-            y = self.label[i]
-            return x, y
-
-        def __len__(self):
-            return len(self.label)
+    def __getitem__(self, i):
+        idx = self.index[i]
+        return self.data[idx], self.tps[idx]
+    
+    def __len__(self):
+        return self.length
 
 class Data(object):
-    def __init__(self, path, batch_size, type_weights=None, ignore_classes=[]):
-        self.path = path
-        self.setnames = ['train', 'test']
-        self.type_weights = type_weights
-        self.batch_size = batch_size
-        self.ignore_classes = ignore_classes
+    def __init__(self, h5path):
+        h5 = h5py.File(h5path, 'r')
+        self.set_pat = h5['set_pat'][:]
+        self.pat_fig = h5['pat_fig'][:]
+        self.tps = h5['tps'][:]
+        self.label = h5['label'][:]
+        self.data = h5['data']
+        self.names = ['train', 'val', 'test']
 
-    class _RandomNoise(object):
-        def __init__(self, mean=0.0, sigma=1.0, p=0.5):
-            self.mean = mean
-            self.sigma = sigma
-            self.p = p
-
-        def __call__(self, img):
-            if np.random.random() < self.p:
-                img = img + \
-                    np.random.randn(*img.size, 3) * self.sigma + self.mean
-                img = np.minimum(255, np.maximum(0, img))
-                img = Image.fromarray(np.uint8(img))
-            return img
-
-    class _GaussianBlur(object):
-        def __init__(self, sigma=1.0, H=5, W=5, p=0.5):
-            self.sigma = sigma
-            self.H = H
-            self.W = W
-            self.p = p
-
-        def __call__(self, img):
-            if np.random.random() < self.p:
-                img = np.array(img)
-                kernelx = cv2.getGaussianKernel(self.W, self.sigma, cv2.CV_32F)
-                kernelx = np.transpose(kernelx)
-                kernely = cv2.getGaussianKernel(self.H, self.sigma, cv2.CV_32F)
-                for i in range(3):
-                    img[:, :, i] = signal.convolve2d(
-                        img[:, :, i], kernelx, mode='same', boundary='fill', fillvalue=0)
-                    img[:, :, i] = signal.convolve2d(
-                        img[:, :, i], kernely, mode='same', boundary='fill', fillvalue=0)
-                img = Image.fromarray(np.uint8(img))
-            return img
-
-    def _pseudo_path(self, path, name):
-        combinepath = os.path.join(path, name)
-        if self.ignore_classes:
-            classes = os.listdir(combinepath)
-            time = os.path.basename(modelpath)[:-6]
-            tmpdir = os.path.join("/wangshuo/zhaox/.tmp", time, name)
-            os.system('mkdir -p %s' % tmpdir)
-            classes = [cl for cl in classes if cl not in self.ignore_classes]
-            for cl in classes:
-                os.system('ln %s %s -s' %
-                          (os.path.join(combinepath, cl), os.path.join(tmpdir, cl)))
-            combinepath = tmpdir
-        return combinepath
-
-    def load(self):
-        image_datasets = {name: ImageFolder(self._pseudo_path(self.path, name), transform=ToTensor()) for name in self.setnames}
-        # image_datasets = {name: H5Datasets(name) for name in self.setnames}
-        trainloader = DataLoader(
-            image_datasets['train'], shuffle=True, batch_size=self.batch_size)
-        testloader = DataLoader(image_datasets['test'], shuffle=True)
-        return {'train': trainloader, 'test': testloader}
+    def load(self, batch_size):
+        datasets = {name: ClassifierDataset(i, self.set_pat, self.pat_fig, self.data, self.tps) for i, name in enumerate(self.names)}
+        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
+        return loaders
 
 
 class Evaluation(object):
