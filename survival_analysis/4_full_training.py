@@ -80,28 +80,18 @@ class Data(object):
         return loaders, mapdic, self.data
 
 class SurvNet(torch.nn.Module):
-    def __init__(self, savedmodel, savedmodel2):
+    def __init__(self, savedmodel, layer, p):
         super(SurvNet, self).__init__()
         self.prenet = torch.load(savedmodel)
         res = next(self.prenet.children())
         res.fc = torch.nn.Identity()
-        self.postnet = torch.load(savedmodel2)
-
-    def forward(self, x):
-        x = self.prenet(x)
-        x = self.postnet(x)
-        return x
-
-class Net(torch.nn.Module):
-    def __init__(self, layers, p):
-        super(Net, self).__init__()
-        self.fc1 = torch.nn.Linear(in_features = 512, out_features = layers[0], bias = True)
+        self.fc1 = torch.nn.Linear(in_features = 512, out_features = layer, bias = True)
         self.th1 = torch.nn.Tanh()
         self.dr1 = torch.nn.Dropout(p)
-        self.fc2 = torch.nn.Linear(in_features = layers[0], out_features = 1, bias = True)
+        self.fc2 = torch.nn.Linear(in_features = layer, out_features = 1, bias = True)
         self.th2 = torch.nn.Tanh()
 
-    def forward(self, x):
+    def fc(self, x):
         x = self.fc1(x)
         x = self.th1(x)
         x = self.dr1(x)
@@ -109,27 +99,39 @@ class Net(torch.nn.Module):
         x = self.th2(x)
         return x
 
+    def forward(self, x):
+        x = self.prenet(x)
+        x = self.fc(x)
+        return x
+
 class Train(object):
-    def __init__(self, savedmodel, savedmodel2, h5path, infopath, lr, batch_size, epochs, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, ratio = [0.8, 0.1, 0.1]):
+    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, ratio = [0.8, 0.1, 0.1]):
         self.savedmodel = savedmodel
-        self.savedmodel2 = savedmodel2
+        self.layer = layer
+        self.p = p
+        self.weight_decay = weight_decay
         self.gpus = gpus
         self.net = self.__load_net()
         self.loss = SurvLoss()
         self.loaders, self.mapdic, self.data = Data(h5path, infopath, figpath).load(batch_size, ratio)
         self.lr = lr
         self.epochs = epochs
-        self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True)
+        self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
         self.lrstep = lrstep
         self.cbstep = cbstep
 
     def __lr_step(self, i):
         if i % self.lrstep == 0 and i != 0:
             self.lr /= 10
-            self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True)
+            self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
 
     def __load_net(self):
-        net = SurvNet(self.savedmodel, self.savedmodel2)
+        net = SurvNet(self.savedmodel, self.layer, self.p)
+        for p in net.parameters():
+            p.requires_grad = False
+        for subnet in [net.fc1, net.fc2]:
+            for p in subnet.parameters():
+                p.requires_grad = True
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
         net = net.cuda()
         return net
@@ -189,7 +191,6 @@ if __name__ == "__main__":
 
     params = {
         "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.27_14:40.model"),
-        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Oct.30_20:18.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
@@ -199,7 +200,10 @@ if __name__ == "__main__":
         "gpus": [0],
         "lrstep": 70,
         "cbstep": 1,
-        "ratio": [0.8, 0.1, 0.1]
+        "ratio": [0.8, 0.1, 0.1],
+        "layer": 100,
+        "p": 0.5,
+        "weight_decay": 5e-4,
     }
     for key, value in params.items():
         print_to_out(key, ":", value)

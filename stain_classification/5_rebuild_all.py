@@ -15,7 +15,8 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 
 def print_to_out(*args):
@@ -190,7 +191,7 @@ class Train(object):
         loss = Loss(self.K, self.smoothing, self.gamma)
         opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
         for i in range(1, self.iters + 1):
-            if i == 50:
+            if i % 20 == 0:
                 self.lr /= 10
                 opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
             net.train()
@@ -213,16 +214,16 @@ global modelpath; global plotpath; global matpath; global outfile
 modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
 params = {
-              "h5path": "/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/compiled.h5",
-             "iters":    200,
+              "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
+             "iters":    60,
                  "K":    4,
           "pretrain":    True,
-                "lr":    0.000001,
+                "lr":    2e-6,
         "batch_size":    64,
              "gamma":    0,
          "smoothing":    0.001,
               "step":    1,
-              "gpus":    [0, 1]
+              "gpus":    [0]
 }
 
 if __name__ == "__main__":
