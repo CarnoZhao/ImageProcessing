@@ -38,6 +38,7 @@ class Data(object):
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
+        self.pats = h5['pats']
         self.names = ['train', 'val', 'test']
 
     def __make_h5(self, h5path, figpath, infopath, ratio):
