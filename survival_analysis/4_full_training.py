@@ -17,10 +17,7 @@ from lifelines.utils import concordance_index
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-if os.path.exists('/wangshuo/zhaox'):
-    root = "/wangshuo/zhaox"
-else:
-    root = "/home/tongxueqing/zhao"
+root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 def print_to_out(*args):
     with open(outfile, 'a') as f:
@@ -88,7 +85,7 @@ class Data(object):
                 self.mapdic[pat].append(i)
         for pat in self.mapdic:
             self.mapdic[pat] = np.array(self.mapdic[pat])
-        self.pats = list(self.patdic.keys())
+        self.pats = list(self.mapdic.keys())
 
     def __make_h5(self, figpath):
         tpdic = {'huaisi': 0, 'jizhi': 1, 'tumor': 2, 'tumorln': 3}
@@ -125,12 +122,30 @@ class SurvNet(torch.nn.Module):
     def __init__(self, savedmodel, savedmodel2):
         super(SurvNet, self).__init__()
         self.prenet = torch.load(savedmodel)
-        self.prenet.fc = torch.nn.Identity()
+        res = next(self.prenet.children())
+        res.fc = torch.nn.Identity()
         self.postnet = torch.load(savedmodel2)
 
     def forward(self, x):
         x = self.prenet(x)
         x = self.postnet(x)
+        return x
+
+class Net(torch.nn.Module):
+    def __init__(self, layers, p):
+        super(Net, self).__init__()
+        self.fc1 = torch.nn.Linear(in_features = 512, out_features = layers[0], bias = True)
+        self.th1 = torch.nn.Tanh()
+        self.dr1 = torch.nn.Dropout(p)
+        self.fc2 = torch.nn.Linear(in_features = layers[0], out_features = 1, bias = True)
+        self.th2 = torch.nn.Tanh()
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.th1(x)
+        x = self.dr1(x)
+        x = self.fc2(x)
+        x = self.th2(x)
         return x
 
 class Train(object):
@@ -178,8 +193,7 @@ class Train(object):
 
     def __call_back(self, i):
         if i % self.cbstep != 0:
-            return 
-        net.eval()
+            return
         out = "%d" % i
         for name, loader in self.loaders.items():
             Y = np.zeros(len(loader.dataset))
@@ -206,21 +220,23 @@ class Train(object):
                 self.opt.step()
             self.__call_back(i)
             self.__lr_step(i)
+        torch.save(net, modelpath)
 
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
     params = {
-        "savedmodel": "",
-        "savedmodel2": "",
-        "h5path": "",
-        "infopath": "",
-        "figpath": "",
-        "lr": 1e-7,
+        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.27_14:40.model"),
+        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Oct.30_20:18.model"),
+        "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
+        "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
+        "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
+        "lr": 1e-3,
         "batch_size": 64,
         "epochs": 50,
         "gpus": [0],
         "lrstep": 20,
-        "cbstep": 10,
+        "cbstep": 1,
     }
+    Train(**params).train()
