@@ -149,6 +149,7 @@ venv.bak/
 *.out
 *.tiff
 *.tif
+*.patch
 _data
 _outs
 _archives

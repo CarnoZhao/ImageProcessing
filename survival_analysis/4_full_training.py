@@ -17,7 +17,12 @@ from lifelines.utils import concordance_index
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
+if os.path.exists("/wangshuo/zhaox"):
+    root = "/wangshuo/zhaox" 
+else:
+    root = "/home/tongxueqing/zhao"
+    torch.nn.Module.dump_patches = True
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def print_to_out(*args):
     with open(outfile, 'a') as f:
@@ -50,7 +55,7 @@ class SurvLoss(torch.nn.Module):
         return loss
 
 class SurvDataset(torch.utils.data.Dataset):
-    def __init__(self, nameidx, set_pat):
+    def __init__(self, nameidx, set_pat, label):
         super(SurvDataset, self).__init__()
         pat = set_pat == nameidx
         self.index = np.array(list(range(len(pat))))[pat]
@@ -74,7 +79,7 @@ class Data(object):
         self.names = ['train', 'val', 'test']
 
     def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
-        datasets = {name: SurvDataset(i, self.set_pat) for i, name in enumerate(self.names)}
+        datasets = {name: SurvDataset(i, self.set_pat, self.label) for i, name in enumerate(self.names)}
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
         mapdic = {i: np.array(list(range(len(self.pat_fig[i]))))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
         return loaders, mapdic, self.data
@@ -105,7 +110,7 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, ratio = [0.8, 0.1, 0.1]):
+    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, gpus = [0], lrstep = 100, cbstep = 10, figpath = None):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -113,7 +118,7 @@ class Train(object):
         self.gpus = gpus
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data = Data(h5path, infopath, figpath).load(batch_size, ratio)
+        self.loaders, self.mapdic, self.data = Data(h5path).load(batch_size)
         self.lr = lr
         self.epochs = epochs
         self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
@@ -190,17 +195,16 @@ if __name__ == "__main__":
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
     params = {
-        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.27_14:40.model"),
+        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.31_16:49.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
         "lr": 1e-7,
         "batch_size": 64,
-        "epochs": 200,
+        "epochs": 20,
         "gpus": [0],
         "lrstep": 70,
         "cbstep": 1,
-        "ratio": [0.8, 0.1, 0.1],
         "layer": 100,
         "p": 0.5,
         "weight_decay": 5e-4,
