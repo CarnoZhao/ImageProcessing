@@ -81,3 +81,22 @@ class Data(object):
         datasets = {name: Dataset(i, self.set_pat, self.pat_fig, self.data, self.tps) for i, name in enumerate(self.names)}
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
         return loaders
+
+def make_summary():
+    from collections import Counter
+    h5path = "/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/compiled.h5"
+    d = Data(h5path)
+    set_pat = d.set_pat
+    print(Counter(set_pat))
+    pat_fig = d.pat_fig
+    tps = d.tps
+    for i in range(3):
+        tpscount(i, set_pat, pat_fig, tps)
+
+def tpscount(i, set_pat, pat_fig, tps):
+    pats = set_pat == i
+    fig = pat_fig[pats]
+    fig = np.sum(fig, axis = 0, dtype = np.bool)
+    tp = tps[fig]
+    cnt = Counter(tp)
+    print(cnt)
