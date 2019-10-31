@@ -110,6 +110,7 @@ class Data(object):
         valpats = self.pats[int(ratio[0] * len(self.pats)):int((ratio[0] + ratio[1]) * len(self.pats))]
         testpats = self.pats[int((ratio[0] + ratio[1]) * len(self.pats)):]
         namepats = {'train': trainpats, 'val': valpats, 'test': testpats}
+        io.savemat(matpath, namepats)
         namesets = {name: H5Datasets(namepats[name], self.patdic) for name in namepats}
         loaders = {name: torch.utils.data.DataLoader(
             namesets[name], 
@@ -149,13 +150,13 @@ class Net(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, savedmodel2, h5path, infopath, lr, batch_size, epochs, gpus = [0], lrstep = 100, cbstep = 10, figpath = None):
+    def __init__(self, savedmodel, savedmodel2, h5path, infopath, lr, batch_size, epochs, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, ratio = [0.8, 0.1, 0.1]):
         self.savedmodel = savedmodel
         self.savedmodel2 = savedmodel2
         self.gpus = gpus
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data = Data(h5path, infopath, figpath).load(batch_size)
+        self.loaders, self.mapdic, self.data = Data(h5path, infopath, figpath).load(batch_size, ratio)
         self.lr = lr
         self.epochs = epochs
         self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True)
@@ -220,7 +221,7 @@ class Train(object):
                 self.opt.step()
             self.__call_back(i)
             self.__lr_step(i)
-        torch.save(net, modelpath)
+        torch.save(self.net, modelpath)
 
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
@@ -232,11 +233,14 @@ if __name__ == "__main__":
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 1e-3,
+        "lr": 1e-7,
         "batch_size": 64,
-        "epochs": 50,
+        "epochs": 200,
         "gpus": [0],
-        "lrstep": 20,
+        "lrstep": 70,
         "cbstep": 1,
+        "ratio": [0.8, 0.1, 0.1]
     }
+    for key, value in params.items():
+        print_to_out(key, ":", value)
     Train(**params).train()
