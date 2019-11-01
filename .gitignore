@@ -149,6 +149,7 @@ venv.bak/
 *.out
 *.tiff
 *.tif
+*.patch
 _data
 _outs
 _archives
@@ -158,3 +159,4 @@ _models
 _roc
 _summary
 images
+_tmpmodels
