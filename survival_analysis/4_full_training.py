@@ -150,6 +150,8 @@ class Train(object):
                     p.requires_grad = True
         else:
             net = torch.load(self.savedmodel)
+            for p in net.parameters():
+                p.requires_grad = True
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
         net = net.cuda()
         return net
@@ -212,14 +214,14 @@ if __name__ == "__main__":
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 1e-7,
+        "lr": 1e-6,
         "batch_size": 64,
         "epochs": 40,
         "gpus": [0],
         "cbstep": 1,
         "lr_decay": 5e-4,
         "optim": "SGD",
-        "weight_decay":1e-5,
+        "weight_decay":1e-6,
         "mission": "ClassSurv"
     }
     for key, value in params.items():
