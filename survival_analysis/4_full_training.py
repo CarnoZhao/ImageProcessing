@@ -110,16 +110,18 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path = None, infopath = None, lr = 1e-4, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
+    def __init__(self, savedmodel, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
         self.weight_decay = weight_decay
         self.gpus = gpus
-        self.net = self.__load_net(mission)
+        self.mission = mission
+        self.net = self.__load_net()
         self.loss = SurvLoss()
         self.loaders, self.mapdic, self.data = Data(h5path).load(batch_size)
         self.lr = lr
+        self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
         self.epochs = epochs
         self.optim = optim
@@ -128,10 +130,24 @@ class Train(object):
         self.cbstep = cbstep
 
     def __get_opt(self):
-        if self.optim == "Adam":
-            return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
-        elif self.optim == "SGD":
-            return torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
+        if self.mission == 'Surv':
+            if self.optim == "Adam":
+                return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
+            elif self.optim == "SGD":
+                return torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
+        else:
+            if self.optim == "Adam":
+                return torch.optim.Adamax([
+                    {'params': self.net.module.module.prenet.parameters(), 'lr': self.lr},
+                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                ])
+            elif self.optim == "SGD":
+                return torch.optim.SGD([
+                    {'params': self.net.module.module.prenet.parameters(), 'lr': self.lr},
+                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                ], momentum = 0.9, nesterov = True)
 
     def __lr_step(self, i):
         if self.lr_decay != -1:
@@ -140,8 +156,8 @@ class Train(object):
             self.lr /= 10
         self.opt = self.__get_opt()
 
-    def __load_net(self, mission):
-        if mission == 'Surv':
+    def __load_net(self):
+        if self.mission == 'Surv':
             net = SurvNet(self.savedmodel, self.layer, self.p)
             for p in net.parameters():
                 p.requires_grad = False
@@ -214,14 +230,15 @@ if __name__ == "__main__":
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 1e-6,
+        "lr": 1e-7, # for resnet part
+        "lr2": 1e-6, # for fc part
         "batch_size": 64,
-        "epochs": 40,
+        "epochs": 25,
         "gpus": [0],
         "cbstep": 1,
         "lr_decay": 5e-4,
         "optim": "SGD",
-        "weight_decay":1e-6,
+        "weight_decay":5e-4,
         "mission": "ClassSurv"
     }
     for key, value in params.items():
