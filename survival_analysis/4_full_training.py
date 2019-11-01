@@ -110,13 +110,13 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, gpus = [0], lrstep = 100, cbstep = 10, figpath = None):
+    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
         self.weight_decay = weight_decay
         self.gpus = gpus
-        self.net = self.__load_net()
+        self.net = self.__load_net(mission)
         self.loss = SurvLoss()
         self.loaders, self.mapdic, self.data = Data(h5path).load(batch_size)
         self.lr = lr
@@ -130,13 +130,16 @@ class Train(object):
             self.lr /= 10
             self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
 
-    def __load_net(self):
-        net = SurvNet(self.savedmodel, self.layer, self.p)
-        for p in net.parameters():
-            p.requires_grad = False
-        for subnet in [net.fc1, net.fc2]:
-            for p in subnet.parameters():
-                p.requires_grad = True
+    def __load_net(self, mission):
+        if mission == 'Surv':
+            net = SurvNet(self.savedmodel, self.layer, self.p)
+            for p in net.parameters():
+                p.requires_grad = False
+            for subnet in [net.fc1, net.fc2]:
+                for p in subnet.parameters():
+                    p.requires_grad = True
+        else:
+            net = torch.load(self.savedmodel)
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
         net = net.cuda()
         return net
@@ -199,7 +202,7 @@ if __name__ == "__main__":
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 1e-7,
+        "lr": 7e-4,
         "batch_size": 64,
         "epochs": 20,
         "gpus": [0],
@@ -207,7 +210,8 @@ if __name__ == "__main__":
         "cbstep": 1,
         "layer": 100,
         "p": 0.5,
-        "weight_decay": 5e-4,
+        "weight_decay":6e-4,
+        "mission": "Surv"
     }
     for key, value in params.items():
         print_to_out(key, ":", value)
