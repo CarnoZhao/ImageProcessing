@@ -110,7 +110,7 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
+    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -120,15 +120,25 @@ class Train(object):
         self.loss = SurvLoss()
         self.loaders, self.mapdic, self.data = Data(h5path).load(batch_size)
         self.lr = lr
+        self.lr_decay = lr_decay
         self.epochs = epochs
-        self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
+        self.optim = optim
+        self.opt = self.__get_opt()
         self.lrstep = lrstep
         self.cbstep = cbstep
 
+    def __get_opt(self):
+        if self.optim == "Adam":
+            return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
+        elif self.optim == "SGD":
+            return torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
+
     def __lr_step(self, i):
-        if i % self.lrstep == 0 and i != 0:
+        if self.lr_decay != -1:
+            self.lr = self.lr / (1 + i * self.lr_decay)
+        elif i % self.lrstep == 0 and i != 0:
             self.lr /= 10
-            self.opt = torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
+        self.opt = self.__get_opt()
 
     def __load_net(self, mission):
         if mission == 'Surv':
@@ -210,6 +220,8 @@ if __name__ == "__main__":
         "cbstep": 1,
         "layer": 100,
         "p": 0.5,
+        "lr_decay": 5e-4,
+        "optim": "Adam",
         "weight_decay":6e-4,
         "mission": "Surv"
     }
