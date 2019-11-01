@@ -110,7 +110,7 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path, infopath, lr, batch_size, epochs, layer, p, weight_decay, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
+    def __init__(self, savedmodel, h5path = None, infopath = None, lr = 1e-4, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -208,22 +208,19 @@ if __name__ == "__main__":
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
     params = {
-        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.31_16:49.model"),
+        "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Nov.01_10:36.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 7e-4,
+        "lr": 1e-7,
         "batch_size": 64,
-        "epochs": 20,
+        "epochs": 40,
         "gpus": [0],
-        "lrstep": 70,
         "cbstep": 1,
-        "layer": 100,
-        "p": 0.5,
         "lr_decay": 5e-4,
-        "optim": "Adam",
-        "weight_decay":6e-4,
-        "mission": "Surv"
+        "optim": "SGD",
+        "weight_decay":1e-5,
+        "mission": "ClassSurv"
     }
     for key, value in params.items():
         print_to_out(key, ":", value)
