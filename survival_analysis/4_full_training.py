@@ -145,10 +145,16 @@ class Train(object):
             elif self.optim == "SGD":
                 return torch.optim.SGD([
                     {'params': self.net.module.module.prenet.parameters(), 'lr': self.lr},
-                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
-                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
                 ], momentum = 0.9, nesterov = True)
-            
+            elif self.optim == "mix":
+                opt1 = torch.optim.Adamax(self.net.module.module.prenet.parameters(), self.lr)
+                opt2 = torch.optim.SGD([
+                    {"params": self.net.module.module.fc1.parameters()},
+                    {"params": self.net.module.module.fc2.parameters()},
+                ], lr = self.lr2, weight_decay = self.weight_decay, momentum = 0.9, nesterov = True)
+                return opt1, opt2
 
     def __lr_step(self, i):
         if self.lr_decay != -1:
@@ -231,11 +237,19 @@ class Train(object):
                 x = self.__get_instance(pats, True)
                 y = y.cuda()
                 self.net.train()
-                self.opt.zero_grad()
+                if self.optim != 'mix':
+                    self.opt.zero_grad()
+                else:
+                    for opt in self.opt:
+                        opt.zero_grad()
                 yhat = self.net(x)
                 cost = self.loss(yhat, y)
                 cost.backward()
-                self.opt.step()
+                if self.optim != 'mix':
+                    self.opt.step()
+                else:
+                    for opt in self.opt:
+                        opt.step()
             self.__call_back(i)
             self.__lr_step(i)
         torch.save(self.net, modelpath)
