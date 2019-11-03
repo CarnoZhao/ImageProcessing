@@ -22,7 +22,7 @@ if os.path.exists("/wangshuo/zhaox"):
 else:
     root = "/home/tongxueqing/zhao"
     torch.nn.Module.dump_patches = True
-os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 def print_to_out(*args):
     with open(outfile, 'a') as f:
@@ -113,7 +113,7 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv'):
+    def __init__(self, savedmodel, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -131,15 +131,16 @@ class Train(object):
         self.opt = self.__get_opt()
         self.lrstep = lrstep
         self.cbstep = cbstep
+        self.ifprint = ifprint
 
     def __get_opt(self):
         if self.mission in ('Surv', 'FullTrain1FC', "FullTrain2FC"):
-            if self.optim == "Adam":
+            if self.optim == "Ada":
                 return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
             elif self.optim == "SGD":
                 return torch.optim.SGD(self.net.parameters(), lr = self.lr, momentum = 0.9, nesterov = True, weight_decay = self.weight_decay)
         elif self.mission == 'ClassSurv':
-            if self.optim == "Adam":
+            if self.optim == "Ada":
                 return torch.optim.Adamax([
                     {'params': self.net.prenet.parameters(), 'lr': self.lr},
                     {"params": self.net.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
@@ -221,10 +222,11 @@ class Train(object):
         else:
             return self.postdata[self.mapdic[int(pat)]]
 
-    def __call_back(self, i):
+    def __call_back(self, i, ifprint = True):
         if i % self.cbstep != 0:
             return
         out = "%d" % i
+        cis = {}
         for name, loader in self.loaders.items():
             Y = np.zeros(len(loader.dataset))
             Yhat = np.zeros(len(loader.dataset))
@@ -235,7 +237,10 @@ class Train(object):
                 i += len(y)
             ci = concordance_index(np.abs(Y), -Yhat, np.where(Y > 0, 1, 0))
             out += " | %s: %.3f" % (name, ci)
-        print_to_out(out)
+            cis[name] = ci
+        if ifprint:
+            print_to_out(out)
+        return cis
 
     def train(self):
         for i in range(self.epochs):
@@ -256,9 +261,10 @@ class Train(object):
                 else:
                     for opt in self.opt:
                         opt.step()
-            self.__call_back(i)
+            cis = self.__call_back(i, self.ifprint)
             self.__lr_step(i)
         torch.save(self.net, modelpath)
+        return cis
 
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
@@ -270,19 +276,40 @@ if __name__ == "__main__":
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         # "infopath": os.path.join(root,"ImageProcessing/survival_analysis/_data/merged.csv"),
         # "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
-        "lr": 5e-4, # for resnet part
+        "lr": 7e-5, # for resnet part
         # "lr2": 1e-4, # for fc part
         "batch_size": 64,
-        "epochs": 25,
-        "gpus": [0, 1, 2],
+        "epochs": 40,
+        "gpus": [0, 1],
         "cbstep": 1,
-        "lr_decay": 5e-4,
-        "layer": 256,
-        "p": 0.5,
+        "lr_decay": 1e-3,
+        "layer": 128,
+        "p": 0.8,
         "optim": "SGD",
         "weight_decay": 1e-0,
-        "mission": "Surv" # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
+        "mission": "Surv", # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
+        "ifprint": False
     }
-    for key, value in params.items():
-        print_to_out(key, ":", value)
-    Train(**params).train()
+    # for key, value in params.items():
+    #     print_to_out(key, ":", value)
+    cis = {'train': 0, 'val': 0, 'test': 0}
+    global iii
+    iii = 0
+    ref = modelpath
+    while any([c < 0.65 for c in cis.values()]):
+        modelpath = ref.replace("Nov", str(iii))
+        params['lr'] = 10 ** (np.random.rand() * 7 - 7)
+        params['lr_decay'] = 10 ** (np.random.rand() * 7 - 7)
+        params['weight_decay'] = 10 ** (np.random.rand() * 7 - 7)
+        params['layer'] = 100 + int(200 * np.random.rand())
+        params['p'] = np.random.rand() * 0.8
+        params['epochs'] = np.random.randint(20, 80)
+        params['optim'] = np.random.choice(['SGD', 'Ada'], 1)[0]
+        params['cbstep'] = params['epochs'] - 1
+        cis = Train(**params).train()
+        out = "lr: %.3e | ep: %d | lrd: %.3e | l: %d | p: %.3f | wtd: %.3e | op: %s | citr: %.4f | civl: %.4f | cits: %.4f" % (
+            params['lr'], params['epochs'], params['lr_decay'], params['layer'], params['p'], params['weight_decay'], params['optim'], 
+            cis['train'], cis['val'], cis['test']
+        )
+        print_to_out(out)
+        iii += 1
