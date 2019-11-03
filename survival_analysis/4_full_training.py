@@ -22,7 +22,7 @@ if os.path.exists("/wangshuo/zhaox"):
 else:
     root = "/home/tongxueqing/zhao"
     torch.nn.Module.dump_patches = True
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 
 def print_to_out(*args):
     with open(outfile, 'a') as f:
@@ -87,18 +87,20 @@ class Data(object):
 class SurvNet(torch.nn.Module):
     def __init__(self, savedmodel, layer, p):
         super(SurvNet, self).__init__()
-        self.prenet = torch.load(savedmodel)
-        res = next(self.prenet.children())
-        res.fc = torch.nn.Identity()
-        # self.fc1 = torch.nn.Linear(in_features = 512, out_features = layer, bias = True)
-        # self.th1 = torch.nn.Tanh()
-        self.dr1 = torch.nn.Dropout(p)
-        self.fc2 = torch.nn.Linear(in_features = layer, out_features = 1, bias = True)
-        self.th2 = torch.nn.Tanh()
+        self.prenet = torch.load(savedmodel).module
+        # res = next(self.prenet.children())
+        # res.fc = torch.nn.Identity()
+        self.prenet.classifier = torch.nn.Sequential(OrderedDict([
+            ('fc1', torch.nn.Linear(1024, layer, bias = True)),
+            ('th1', torch.nn.Tanh()),
+            ('dr1', torch.nn.Dropout(p)),
+            ('fc2', torch.nn.Linear(layer, 1, bias = True)),
+            ('th2', torch.nn.Tanh())
+            ]))
 
     def fc(self, x):
-        # x = self.fc1(x)
-        # x = self.th1(x)
+        x = self.fc1(x)
+        x = self.th1(x)
         x = self.dr1(x)
         x = self.fc2(x)
         x = self.th2(x)
@@ -106,7 +108,7 @@ class SurvNet(torch.nn.Module):
 
     def forward(self, x):
         x = self.prenet(x)
-        x = self.fc(x)
+        # x = self.fc(x)
         return x
 
 class Train(object):
@@ -130,7 +132,7 @@ class Train(object):
         self.cbstep = cbstep
 
     def __get_opt(self):
-        if self.mission in ('Surv', 'FullTrain1FC'):
+        if self.mission in ('Surv', 'FullTrain1FC', "FullTrain2FC"):
             if self.optim == "Adam":
                 return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
             elif self.optim == "SGD":
@@ -138,21 +140,21 @@ class Train(object):
         elif self.mission == 'ClassSurv':
             if self.optim == "Adam":
                 return torch.optim.Adamax([
-                    {'params': self.net.module.module.prenet.parameters(), 'lr': self.lr},
-                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
-                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                    {'params': self.net.prenet.parameters(), 'lr': self.lr},
+                    {"params": self.net.fc1.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
+                    {"params": self.net.fc2.parameters(), 'lr': self.lr2, "weight_decay": 6.5e-3},
                 ])
             elif self.optim == "SGD":
                 return torch.optim.SGD([
-                    {'params': self.net.module.module.prenet.parameters(), 'lr': self.lr},
-                    {"params": self.net.module.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
-                    {"params": self.net.module.module.fc2.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {'params': self.net.prenet.parameters(), 'lr': self.lr},
+                    {"params": self.net.fc1.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {"params": self.net.fc2.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
                 ], momentum = 0.9, nesterov = True)
             elif self.optim == "mix":
-                opt1 = torch.optim.Adamax(self.net.module.module.prenet.parameters(), self.lr)
+                opt1 = torch.optim.Adamax(self.net.prenet.parameters(), self.lr)
                 opt2 = torch.optim.SGD([
-                    {"params": self.net.module.module.fc1.parameters()},
-                    {"params": self.net.module.module.fc2.parameters()},
+                    {"params": self.net.fc1.parameters()},
+                    {"params": self.net.fc2.parameters()},
                 ], lr = self.lr2, weight_decay = self.weight_decay, momentum = 0.9, nesterov = True)
                 return opt1, opt2
 
@@ -168,12 +170,13 @@ class Train(object):
             net = SurvNet(self.savedmodel, self.layer, self.p)
             for p in net.parameters():
                 p.requires_grad = False
+            for subnet in [net.prenet.classifier]:
             # for subnet in [net.fc1, net.fc2]:
-            for subnet in [net.fc2]:
+            # for subnet in [net.fc2]:
                 for p in subnet.parameters():
                     p.requires_grad = True
         elif self.mission == "ClassSurv":
-            net = torch.load(self.savedmodel)
+            net = torch.load(self.savedmodel).module
             for p in net.parameters():
                 p.requires_grad = True
         elif self.mission == "FullTrain1FC":
@@ -259,21 +262,22 @@ if __name__ == "__main__":
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 
     params = {
-        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Oct.31_16:49.model"),
+        # "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Nov.02_08:26.model"),
+        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Nov.02_22:27.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
         "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
         "lr": 5e-4, # for resnet part
-        # "lr2": 7e-5, # for fc part
+        # "lr2": 1e-4, # for fc part
         "batch_size": 64,
-        "epochs": 40,
-        "gpus": [0, 1],
+        "epochs": 25,
+        "gpus": [0, 1, 2],
         "cbstep": 1,
         "lr_decay": 5e-4,
-        "layer": 512,
+        "layer": 256,
         "p": 0.5,
         "optim": "SGD",
-        "weight_decay": 5e-2,
+        "weight_decay": 1e-2,
         "mission": "Surv" # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
     }
     for key, value in params.items():

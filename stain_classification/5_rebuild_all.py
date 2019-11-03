@@ -15,7 +15,7 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 
@@ -158,8 +158,8 @@ class Train(object):
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.resnet18(pretrained = True)
-            net.fc = torch.nn.Linear(in_features=512, out_features = self.K)
+            net = torchvision.models.densenet121(pretrained = True)
+            net.classifier = torch.nn.Linear(in_features=1024, out_features = self.K, bias = True)
         else:
             net = torchvision.models.resnet18(num_classes = self.K)
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
@@ -191,7 +191,7 @@ class Train(object):
         loss = Loss(self.K, self.smoothing, self.gamma)
         opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
         for i in range(1, self.iters + 1):
-            if i % 20 == 0:
+            if i % 30 == 0:
                 self.lr /= 10
                 opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
             net.train()
@@ -218,13 +218,14 @@ params = {
              "iters":    60,
                  "K":    4,
           "pretrain":    True,
-                "lr":    2e-6,
-        "batch_size":    64,
+                "lr":    3e-6,
+        "batch_size":    32,
              "gamma":    0,
          "smoothing":    0.001,
               "step":    1,
-              "gpus":    [0]
+              "gpus":    [0, 1, 2]
 }
-
+for k, v in params.items():
+    print_to_out(k, ':', v)
 if __name__ == "__main__":
     net = Train(**params).train()
