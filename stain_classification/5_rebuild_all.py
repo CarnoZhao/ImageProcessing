@@ -25,9 +25,9 @@ def print_to_out(*args):
         f.write('\n')
 
 
-class Loss(torch.nn.Module):
+class OldLoss(torch.nn.Module):
     def __init__(self, K, smoothing=0.0, gamma=0):
-        super(Loss, self).__init__()
+        super(OldLoss, self).__init__()
         self.criterion = torch.nn.KLDivLoss()
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
@@ -42,6 +42,23 @@ class Loss(torch.nn.Module):
         true_dist.scatter_(1, Y.data.unsqueeze(1), self.confidence)
         self.true_dist = true_dist
         return self.criterion(Yhat, torch.autograd.Variable(true_dist, requires_grad = False))
+
+class Loss(torch.nn.Module):
+    def __init__(self, K, smoothing = 0, gamma = 0):
+        super(Loss, self).__init__()
+        self.K = K
+        self.gamma = gamma
+        self.smoothing = smoothing
+
+    def forward(self, Yhat, Y):
+        Yhat = Yhat.softmax(-1)
+        oneHot = torch.zeros_like(Yhat)
+        oneHot = oneHot.scatter_(1, Y.data.unsqueeze(1), 1)
+        oneHot = torch.clamp(oneHot, self.smoothing / (self.K - 1), 1.0 - self.smoothing)
+        pt = (oneHot * Yhat).sum(1)  + 1e-10
+        logpt = pt.log()
+        loss = -torch.pow(1 - pt, self.gamma) * logpt
+        return loss.mean()
 
 class ClassifierDataset(torch.utils.data.Dataset):
     def __init__(self, nameidx, set_pat, pat_fig, data, tps):
@@ -220,8 +237,8 @@ params = {
           "pretrain":    True,
                 "lr":    3e-6,
         "batch_size":    32,
-             "gamma":    0,
-         "smoothing":    0.001,
+             "gamma":    2,
+         "smoothing":    0.1,
               "step":    1,
               "gpus":    [0, 1, 2]
 }
