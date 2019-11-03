@@ -76,13 +76,14 @@ class Data(object):
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
+        self.postdata = h5['postdata'][:]
         self.names = ['train', 'val', 'test']
 
     def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
         datasets = {name: SurvDataset(i, self.set_pat, self.label) for i, name in enumerate(self.names)}
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
         mapdic = {i: np.array(list(range(len(self.pat_fig[i]))))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
-        return loaders, mapdic, self.data
+        return loaders, mapdic, self.data, self.postdata
 
 class SurvNet(torch.nn.Module):
     def __init__(self, savedmodel, layer, p):
@@ -121,7 +122,7 @@ class Train(object):
         self.mission = mission
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data = Data(h5path).load(batch_size)
+        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path).load(batch_size)
         self.lr = lr
         self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
@@ -167,14 +168,13 @@ class Train(object):
 
     def __load_net(self):
         if self.mission == 'Surv':
-            net = SurvNet(self.savedmodel, self.layer, self.p)
-            for p in net.parameters():
-                p.requires_grad = False
-            for subnet in [net.prenet.classifier]:
-            # for subnet in [net.fc1, net.fc2]:
-            # for subnet in [net.fc2]:
-                for p in subnet.parameters():
-                    p.requires_grad = True
+            net = torch.nn.Sequential(OrderedDict([
+                ('fc1', torch.nn.Linear(1024, self.layer, bias = True)),
+                ('dr1', torch.nn.Dropout(self.p)),
+                ('th1', torch.nn.Tanh()),
+                ('fc2', torch.nn.Linear(self.layer, 1, bias = True)),
+                ('th2', torch.nn.Tanh())
+            ]))
         elif self.mission == "ClassSurv":
             net = torch.load(self.savedmodel).module
             for p in net.parameters():
@@ -216,7 +216,10 @@ class Train(object):
         return x if istrain else y
 
     def __get_x(self, pat):
-        return self.data[self.mapdic[int(pat)]]
+        if self.mission != 'Surv':
+            return self.data[self.mapdic[int(pat)]]
+        else:
+            return self.postdata[self.mapdic[int(pat)]]
 
     def __call_back(self, i):
         if i % self.cbstep != 0:
