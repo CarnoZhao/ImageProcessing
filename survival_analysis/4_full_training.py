@@ -265,8 +265,8 @@ if __name__ == "__main__":
         # "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Nov.02_08:26.model"),
         "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Nov.02_22:27.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-        "infopath": os.path.join(root, "ImageProcessing/survival_analysis/_data/merged.csv"),
-        "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
+        # "infopath": os.path.join(root,"ImageProcessing/survival_analysis/_data/merged.csv"),
+        # "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
         "lr": 5e-4, # for resnet part
         # "lr2": 1e-4, # for fc part
         "batch_size": 64,
@@ -277,7 +277,7 @@ if __name__ == "__main__":
         "layer": 256,
         "p": 0.5,
         "optim": "SGD",
-        "weight_decay": 1e-2,
+        "weight_decay": 1e-0,
         "mission": "Surv" # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
     }
     for key, value in params.items():
