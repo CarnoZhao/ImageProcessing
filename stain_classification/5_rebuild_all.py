@@ -15,7 +15,7 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 
@@ -235,7 +235,7 @@ params = {
              "iters":    60,
                  "K":    4,
           "pretrain":    True,
-                "lr":    3e-6,
+                "lr":    2e-6,
         "batch_size":    32,
              "gamma":    2,
          "smoothing":    0.1,

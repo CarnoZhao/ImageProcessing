@@ -28,17 +28,20 @@ def f2(mode):
     import numpy as np
     files = [
         "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/success.Nov.03_13:45.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.03_14:26.out", 
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.03_14:27.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.03_17:48.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_14:26.out", 
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_14:27.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_17:48.out",
     ]
     d = defaultdict(list)
-    for f in files:
-        with open(f) as f:
+    for fname in files:
+        with open(fname) as f:
+            ln = 0
             for l in f:
                 if not l.startswith('lr'):
                     continue
                 fs = l.split(' | ')
+                d['f'].append(os.path.basename(fname).split('.')[2])
+                d['line'].append(ln)
                 for k, v in [field.split(':')[:2] for field in fs]:
                     k = k.strip()
                     v = v.strip()
@@ -47,6 +50,7 @@ def f2(mode):
                     except:
                         pass
                     d[k].append(v)
+                ln += 1
     m = 0
     n = -1
     for idx, p in enumerate(zip(d['citr'], d['civl'], d['cits'])):
@@ -58,6 +62,7 @@ def f2(mode):
             if np.mean(p) > m:
                 m = np.mean(p)
                 n = idx
+    print(n)
     print(round(m, ndigits = 3))
     print(' | '.join([k + ": " + str(v[n]) for k, v in d.items()]))
 
