@@ -127,7 +127,7 @@ class Evaluation(object):
         ax.set_ylabel('True Positive Rate')
         ax.grid(b=True, ls=':')
         plt.legend()
-        plt.savefig(plotpath.replace("Nov", "%d.Nov" % k))
+        plt.savefig(plotpath)
 
     def printplot(self, net, loaders, K, k):
         data = {'names': list(loaders.keys())}
@@ -203,20 +203,21 @@ class Train(object):
         print_to_out(out)
             
     def __load_opt(self):
-        self.opt = torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
+        return torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
 
     def __lr_step(self, i):
         if i % 30 == 0:
             self.lr /= 10
-            self.__load_opt()
+            self.opt = self.__load_opt()
 
     def __evalu(self, loaders, k):
         self.net.eval()
         Evaluation().printplot(self.net, loaders, self.K, k)
-        Evaluation().cnter(matpath.replace("Nov", "%d.Nov" % k), self.K)
+        Evaluation().cnter(matpath, self.K)
 
     def train(self):
         for k in range(self.fold):
+            modelpath, plotpath, matpath = [p.replace("Nov", "%d.Nov" % k) for p in refs]
             print_to_out("in fold %d:" % k)
             loaders = self.D.load(self.batch_size)
             for i in range(1, self.iters + 1):
@@ -228,18 +229,20 @@ class Train(object):
                     cost = self.loss(yhat, y)
                     cost.backward()
                     self.opt.step()
-                self._call_back(i, loaders)
+                self.__call_back(i, loaders)
                 self.__lr_step(i)
-            torch.save(self.net, modelpath.replace("Nov", "%d.Nov" % k))
+            torch.save(self.net, modelpath)
             self.__evalu(loaders, k)
 
 
 global modelpath; global plotpath; global matpath; global outfile
 modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
+global refs
+refs = [modelpath, plotpath, matpath]
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-             "iters":    100,
+             "iters":    1,
                  "K":    4,
           "pretrain":    True,
                 "lr":    2.5e-6,
