@@ -24,25 +24,6 @@ def print_to_out(*args):
         f.write(' '.join([str(arg) for arg in args]))
         f.write('\n')
 
-
-class OldLoss(torch.nn.Module):
-    def __init__(self, K, smoothing=0.0, gamma=0):
-        super(OldLoss, self).__init__()
-        self.criterion = torch.nn.KLDivLoss()
-        self.confidence = 1.0 - smoothing
-        self.smoothing = smoothing
-        self.K = K
-        self.true_dist = None
-
-    def forward(self, Yhat, Y):
-        assert Yhat.size(1) == self.K
-        Yhat = Yhat.log_softmax(-1)
-        true_dist = Yhat.data.clone()
-        true_dist.fill_(self.smoothing / (self.K - 1))
-        true_dist.scatter_(1, Y.data.unsqueeze(1), self.confidence)
-        self.true_dist = true_dist
-        return self.criterion(Yhat, torch.autograd.Variable(true_dist, requires_grad = False))
-
 class Loss(torch.nn.Module):
     def __init__(self, K, smoothing = 0, gamma = 0):
         super(Loss, self).__init__()
@@ -61,9 +42,8 @@ class Loss(torch.nn.Module):
         return loss.mean()
 
 class ClassifierDataset(torch.utils.data.Dataset):
-    def __init__(self, nameidx, set_pat, pat_fig, data, tps):
+    def __init__(self, pat, pat_fig, data, tps):
         super(ClassifierDataset, self).__init__()
-        pat = set_pat == nameidx
         fig = np.sum(pat_fig[pat], axis = 0, dtype = np.bool)
         self.index = np.array(list(range(len(fig))))[fig]
         self.data = data
@@ -78,17 +58,35 @@ class ClassifierDataset(torch.utils.data.Dataset):
         return self.length
 
 class Data(object):
-    def __init__(self, h5path):
+    def __init__(self, h5path, fold = 4):
         h5 = h5py.File(h5path, 'r')
+        self.fold = fold
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
         self.names = ['train', 'val', 'test']
+        self.k = 0
+
+    def __datasets_creater(self):
+        train_val = np.arange(len(self.set_pat))[self.set_pat == 0]
+        inf = int(self.k * len(train_val) / self.fold)
+        sup = int((self.k + 1) * len(train_val) / self.fold)
+        validx = np.arange(len(train_val))
+        validx = np.bitwise_and(np.greater_equal(validx, inf), np.less(validx, sup))
+        train = train_val[np.bitwise_not(validx)]
+        val = train_val[validx]
+        test = np.arange(len(self.set_pat))[self.set_pat == 1]
+        datasets = {}
+        datasets['train'] = ClassifierDataset(train, self.pat_fig, self.data, self.tps)
+        datasets['val'] = ClassifierDataset(val, self.pat_fig, self.data, self.tps)
+        datasets['test'] = ClassifierDataset(test, self.pat_fig, self.data, self.tps)
+        self.k += 1
+        return datasets
 
     def load(self, batch_size):
-        datasets = {name: ClassifierDataset(i, self.set_pat, self.pat_fig, self.data, self.tps) for i, name in enumerate(self.names)}
+        datasets = self.__datasets_creater()
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
         return loaders
 
@@ -110,7 +108,7 @@ class Evaluation(object):
         accu = np.mean(np.equal(np.argmax(Y, axis=1), np.argmax(Yhat, axis=1)))
         return Y, Yhat, accu
 
-    def plot_roc_auc(self, data):
+    def plot_roc_auc(self, data, k):
         fig, ax = plt.subplots()
         colors = ['r', 'g', 'b']
         for i, name in enumerate(data['names']):
@@ -129,9 +127,9 @@ class Evaluation(object):
         ax.set_ylabel('True Positive Rate')
         ax.grid(b=True, ls=':')
         plt.legend()
-        plt.savefig(plotpath)
+        plt.savefig(plotpath.replace("Nov", "%d.Nov" % k))
 
-    def printplot(self, net, loaders, K):
+    def printplot(self, net, loaders, K, k):
         data = {'names': list(loaders.keys())}
         accus = {}
         for key, loader in loaders.items():
@@ -140,7 +138,7 @@ class Evaluation(object):
             data[key + 'Yhat'] = Yhat
             accus[key] = accu
         io.savemat(matpath, data)
-        self.plot_roc_auc(data)
+        self.plot_roc_auc(data, k)
         for name in data['names']:
             print_to_out('Accuracy in %s = %.6f' % (name, accus[name]))
 
@@ -161,81 +159,84 @@ class Evaluation(object):
 
 
 class Train(object):
-    def __init__(self, h5path, iters, K, pretrain, weight_decay, lr, batch_size, gpus, gamma = 0, smoothing = 0, step = 3, nettype = "densenet"):
-        self.h5path = h5path
+    def __init__(self, h5path, iters, K, pretrain, weight_decay, lr, batch_size, gpus, fold = 4, gamma = 0, smoothing = 0, step = 3, nettype = "densenet"):
+        self.fold = fold
         self.iters = iters
         self.K = K
-        self.pretrain = pretrain
         self.lr = lr
         self.batch_size = batch_size
-        self.gamma = gamma
-        self.smoothing = smoothing
         self.step = step
-        self.gpus = gpus
         self.weight_decay = weight_decay
-        self.nettype = nettype
+        self.net = self.__load_net(nettype, gpus, pretrain)
+        self.D = Data(h5path, fold)
+        self.opt = self.__load_opt()
+        self.loss = Loss(self.K, smoothing, gamma)
 
-    def _load_net(self):
-        if self.pretrain:
-            if self.nettype == "densenet":
+    def __load_net(self, nettype, gpus, pretrain):
+        if pretrain:
+            if nettype == "densenet":
                 net = torchvision.models.densenet121(pretrained = True)
-                net.classifier = torch.nn.Linear(in_features=1024, out_features = self.K, bias = True)
-            elif self.nettype == "resnext":
+                net.classifier = torch.nn.Linear(1024, self.K, bias = True)
+            elif nettype == "resnext":
                 net = torchvision.models.resnext50_32x4d(pretrained = True)
                 net.fc = torch.nn.Linear(2048, self.K, bias = True)
         else:
             net = torchvision.models.resnet18(num_classes = self.K)
-        net = torch.nn.DataParallel(net, device_ids = self.gpus)
+        net = torch.nn.DataParallel(net, device_ids = gpus)
         net = net.cuda()
         return net
 
-
-    def _call_back(self, i, net, loaders, loss):
+    def __call_back(self, i, loaders):
         if i % self.step != 0:
             return 
-        net.eval()
+        self.net.eval()
         out = "%d" % i
         with torch.no_grad():
             for name, loader in loaders.items():
                 a = b = 0
                 for x, y in loader:
                     x = x.cuda(); y = y.cuda()
-                    yhat = net(x)
+                    yhat = self.net(x)
                     a += len(y)
                     b += int(torch.sum(torch.argmax(yhat, dim = 1) == y))
                 out += " | %s: %.4f" % (name, b / a)
         print_to_out(out)
             
+    def __load_opt(self):
+        self.opt = torch.optim.Adamax(self.net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
+
+    def __lr_step(self, i):
+        if i % 30 == 0:
+            self.lr /= 10
+            self.__load_opt()
+
+    def __evalu(self, loaders, k):
+        self.net.eval()
+        Evaluation().printplot(self.net, loaders, self.K, k)
+        Evaluation().cnter(matpath.replace("Nov", "%d.Nov" % k), self.K)
 
     def train(self):
-        loaders = Data(self.h5path).load(self.batch_size)
-        loader = loaders['train']
-        net = self._load_net()
-        loss = Loss(self.K, self.smoothing, self.gamma)
-        opt = torch.optim.Adamax(net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
-        for i in range(1, self.iters + 1):
-            if i % 30 == 0:
-                self.lr /= 10
-                opt = torch.optim.Adamax(net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
-            net.train()
-            for j, (x, y) in enumerate(loader):
-                x = x.cuda(); y = y.cuda()
-                yhat = net(x)
-                opt.zero_grad()
-                cost = loss(yhat, y)
-                cost.backward()
-                opt.step()
-            self._call_back(i, net, loaders, loss)
-        torch.save(net, modelpath)
-        net.eval()
-        Evaluation().printplot(net, loaders, self.K)
-        Evaluation().cnter(matpath, self.K)
-        return net
+        for k in range(self.fold):
+            print_to_out("in fold %d:" % k)
+            loaders = self.D.load(self.batch_size)
+            for i in range(1, self.iters + 1):
+                self.net.train()
+                for x, y in loaders['train']:
+                    x = x.cuda(); y = y.cuda()
+                    yhat = self.net(x)
+                    self.opt.zero_grad()
+                    cost = self.loss(yhat, y)
+                    cost.backward()
+                    self.opt.step()
+                self._call_back(i, loaders)
+                self.__lr_step(i)
+            torch.save(self.net, modelpath.replace("Nov", "%d.Nov" % k))
+            self.__evalu(loaders, k)
 
 
 global modelpath; global plotpath; global matpath; global outfile
 modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
              "iters":    100,
@@ -246,11 +247,12 @@ params = {
              "gamma":    2,
          "smoothing":    0.01,
               "step":    1,
-      "weight_decay":    0.001,
-              "gpus":    [0, 1, 2],
-           "nettype":    "resnext"
+      "weight_decay":    6e-3,
+              "gpus":    [0, 1,2],
+              "fold":    4,
+           "nettype":    "densenet"
 }
 for k, v in params.items():
     print_to_out(k, ':', v)
 if __name__ == "__main__":
-    net = Train(**params).train()
+    Train(**params).train()
