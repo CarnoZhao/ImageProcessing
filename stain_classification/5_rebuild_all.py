@@ -15,7 +15,7 @@ from collections import Counter
 from torchvision.transforms import *
 from torchvision.datasets import ImageFolder
 from torch.utils.data import WeightedRandomSampler, BatchSampler, DataLoader, RandomSampler
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
+
 root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 
@@ -161,7 +161,7 @@ class Evaluation(object):
 
 
 class Train(object):
-    def __init__(self, h5path, iters, K, pretrain, lr, batch_size, gpus, gamma = 0, smoothing = 0, step = 3):
+    def __init__(self, h5path, iters, K, pretrain, weight_decay, lr, batch_size, gpus, gamma = 0, smoothing = 0, step = 3, nettype = "densenet"):
         self.h5path = h5path
         self.iters = iters
         self.K = K
@@ -172,11 +172,17 @@ class Train(object):
         self.smoothing = smoothing
         self.step = step
         self.gpus = gpus
+        self.weight_decay = weight_decay
+        self.nettype = nettype
 
     def _load_net(self):
         if self.pretrain:
-            net = torchvision.models.densenet121(pretrained = True)
-            net.classifier = torch.nn.Linear(in_features=1024, out_features = self.K, bias = True)
+            if self.nettype == "densenet":
+                net = torchvision.models.densenet121(pretrained = True)
+                net.classifier = torch.nn.Linear(in_features=1024, out_features = self.K, bias = True)
+            elif self.nettype == "resnext":
+                net = torchvision.models.resnext50_32x4d(pretrained = True)
+                net.fc = torch.nn.Linear(2048, self.K, bias = True)
         else:
             net = torchvision.models.resnet18(num_classes = self.K)
         net = torch.nn.DataParallel(net, device_ids = self.gpus)
@@ -206,11 +212,11 @@ class Train(object):
         loader = loaders['train']
         net = self._load_net()
         loss = Loss(self.K, self.smoothing, self.gamma)
-        opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
+        opt = torch.optim.Adamax(net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
         for i in range(1, self.iters + 1):
             if i % 30 == 0:
                 self.lr /= 10
-                opt = torch.optim.Adamax(net.parameters(), lr = self.lr)
+                opt = torch.optim.Adamax(net.parameters(), lr = self.lr, weight_decay = self.weight_decay)
             net.train()
             for j, (x, y) in enumerate(loader):
                 x = x.cuda(); y = y.cuda()
@@ -229,18 +235,20 @@ class Train(object):
 
 global modelpath; global plotpath; global matpath; global outfile
 modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-             "iters":    60,
+             "iters":    100,
                  "K":    4,
           "pretrain":    True,
-                "lr":    2e-6,
+                "lr":    2.5e-6,
         "batch_size":    32,
              "gamma":    2,
-         "smoothing":    0.1,
+         "smoothing":    0.01,
               "step":    1,
-              "gpus":    [0, 1, 2]
+      "weight_decay":    0.001,
+              "gpus":    [0, 1, 2],
+           "nettype":    "resnext"
 }
 for k, v in params.items():
     print_to_out(k, ':', v)
