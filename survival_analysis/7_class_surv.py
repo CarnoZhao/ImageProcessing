@@ -57,7 +57,10 @@ class SurvLoss(torch.nn.Module):
 class SurvDataset(torch.utils.data.Dataset):
     def __init__(self, nameidx, set_pat, label):
         super(SurvDataset, self).__init__()
-        pat = set_pat == nameidx
+        if isinstance(nameidx, list):
+            pat = np.bitwise_or(*(set_pat == nidx for nidx in nameidx))
+        else:
+            pat = set_pat == nameidx
         self.index = np.array(list(range(len(pat))))[pat]
         self.label = label
         self.length = len(self.index)
@@ -79,9 +82,15 @@ class Data(object):
         self.postdata = h5['postdata'][:]
         self.names = ['train', 'val', 'test']
 
-    def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
-        datasets = {name: SurvDataset(i, self.set_pat, self.label) for i, name in enumerate(self.names)}
-        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
+    def load(self, batch_size, ifcombine = False):
+        if ifcombine:
+            datasets = {
+                'train': SurvDataset([0, 1], self.set_pat, self.label),
+                "test": SurvDataset(2, self.set_pat, self.label)
+            }
+        else:
+            datasets = {name: SurvDataset(i, self.set_pat, self.label) for i, name in enumerate(self.names)}
+        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in datasets}
         mapdic = {i: np.array(list(range(len(self.pat_fig[i]))))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
         return loaders, mapdic, self.data, self.postdata
 
@@ -113,7 +122,7 @@ class SurvNet(torch.nn.Module):
         return x
 
 class Train(object):
-    def __init__(self, savedmodel, savedmodel2 = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True):
+    def __init__(self, savedmodel, savedmodel2 = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True, ifcombine = False):
         self.savedmodel = savedmodel
         self.savedmodel2 = savedmodel2
         self.layer = layer
@@ -123,7 +132,7 @@ class Train(object):
         self.mission = mission
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path).load(batch_size)
+        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path).load(batch_size, ifcombine)
         self.lr = lr
         self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
@@ -143,20 +152,17 @@ class Train(object):
         elif self.mission == 'ClassSurv':
             if self.optim == "Ada":
                 return torch.optim.Adamax([
-                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr},
+                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay},
                     {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
                 ])
             elif self.optim == "SGD":
                 return torch.optim.SGD([
-                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr},
-                    {"params": self.net.module.fc1.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay},
+                    {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
                 ], momentum = 0.9, nesterov = True)
             elif self.optim == "mix":
-                opt1 = torch.optim.Adamax(self.net.prenet.parameters(), self.lr)
-                opt2 = torch.optim.SGD([
-                    {"params": self.net.fc1.parameters()},
-                    {"params": self.net.fc2.parameters()},
-                ], lr = self.lr2, weight_decay = self.weight_decay, momentum = 0.9, nesterov = True)
+                opt1 = torch.optim.Adamax(self.net.module.prenet.parameters(), self.lr, weight_decay = self.weight_decay)
+                opt2 = torch.optim.SGD(self.net.module.postnet.parameters(), lr = self.lr2, weight_decay = self.weight_decay, momentum = 0.9, nesterov = True)
                 return opt1, opt2
 
     def __lr_step(self, i):
@@ -278,23 +284,24 @@ if __name__ == "__main__":
     params = {
         # "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Nov.02_08:26.model"),
         "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/success.Nov.02_22:27.model"),
-        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/277.03_13:45.model"),
+        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/623.03_14:27.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         # "infopath": os.path.join(root,"ImageProcessing/survival_analysis/_data/merged.csv"),
         # "figpath": os.path.join(root, "ImageProcessing/stain_classification/_data/subsets"),
         "lr": 1e-7, # for resnet part
-        "lr2": 4.483e-7, # for fc part
-        "batch_size": 64,
-        "epochs": 40,
+        "lr2": 5e-7, # for fc part
+        "batch_size": 32,
+        "epochs": 200,
         "gpus": [0, 1],
         "cbstep": 1,
         "lr_decay": 7.754e-4,
         # "layer": 128,
         # "p": 0.8,
-        "optim": "Ada",
-        "weight_decay": 1.83e-3,
+        "optim": "mix",
+        "weight_decay": 6e-3,
         "mission": "ClassSurv", # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
-        "ifprint": True
+        "ifprint": True,
+        "ifcombine": True
     }
     for key, value in params.items():
         print_to_out(key, ":", value)
