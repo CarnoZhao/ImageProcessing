@@ -27,7 +27,8 @@ class Data(object):
     def __init__(self, h5path, infopath = None, figpath = None, ratio = [0.7, 0.15, 0.15], createpost = False):
         if not os.path.exists(h5path):
             self.__make_h5(h5path, figpath, infopath, ratio, createpost)
-        h5 = h5py.File(h5path, 'r')
+        h5 = h5py.File(h5path, 'a')
+        self.__make_post(h5)
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
@@ -36,7 +37,20 @@ class Data(object):
         self.pats = h5['pats']
         self.names = ['train', 'val', 'test']
 
-    def __make_h5(self, h5path, figpath, infopath, ratio, createpost):
+    def __make_post(self, h5):
+        with torch.no_grad():
+            net = torch.load("/wangshuo/zhaox/ImageProcessing/stain_classification/_models/2.Nov.05_09:31.model").module
+            net.fc = torch.nn.Identity()
+            net = net.cuda()
+            try: h5.pop('postdata')
+            except: pass
+            h5.create_dataset('postdata', shape = (len(h5['data']), 512))
+            for i in range(len(h5['data'])):
+                img = h5['data'][i:i+1, :, :, :]
+                yhat = net(torch.FloatTensor(img).cuda())
+                h5['postdata'][i, :] = yhat.cpu()
+
+    def __make_h5(self, h5path, figpath, infopath, ratio):
         tpdic = {'huaisi': 0, 'jizhi': 1, 'tumor': 2, 'tumorln': 3}
         tiffiles = [f.strip() for f in os.popen("find %s -name \"*.tif\"" % figpath)]
         info = pd.read_csv(infopath)
@@ -67,18 +81,9 @@ class Data(object):
         h5.create_dataset('label', data = label)
         h5.create_dataset('pats', data = pats)
         h5.create_dataset('data', shape = (len(tiffiles), 3, 512, 512))
-        with torch.no_grad():
-            if createpost:
-                net = torch.load("/wangshuo/zhaox/ImageProcessing/stain_classification/_models/success.Nov.02_22:27.model").module
-                net.classifier = torch.nn.Identity()
-                net = net.cuda()
-                h5.create_dataset('postdata', shape = (len(tiffiles), 1024))
-            for i, tif in enumerate(tiffiles):
-                img = cv2.imread(tif)[:, :, ::-1].transpose((2, 0, 1)) / 255
-                if createpost:
-                    yhat = net(torch.FloatTensor(img[np.newaxis, :, :, :]).cuda())
-                    h5['postdata'][i, :] = yhat.cpu()
-                h5['data'][i, :, :, :] = img
+        for i, tif in enumerate(tiffiles):
+            img = cv2.imread(tif)[:, :, ::-1].transpose((2, 0, 1)) / 255
+            h5['data'][i, :, :, :] = img
         h5.close()
 
     def load(self, batch_size):
