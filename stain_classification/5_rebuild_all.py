@@ -167,9 +167,10 @@ class Train(object):
         self.batch_size = batch_size
         self.step = step
         self.weight_decay = weight_decay
-        self.net = self.__load_net(nettype, gpus, pretrain)
+        self.nettype = nettype
+        self.gpus = gpus
+        self.pretrain = pretrain
         self.D = Data(h5path, fold)
-        self.opt = self.__load_opt()
         self.loss = Loss(self.K, smoothing, gamma)
 
     def __load_net(self, nettype, gpus, pretrain):
@@ -180,6 +181,9 @@ class Train(object):
             elif nettype == "resnext":
                 net = torchvision.models.resnext50_32x4d(pretrained = True)
                 net.fc = torch.nn.Linear(2048, self.K, bias = True)
+            elif nettype == "resnet":
+                net = torchvision.models.resnet18(pretrained = True)
+                net.fc = torch.nn.Linear(512, self.K, bias = True)
         else:
             net = torchvision.models.resnet18(num_classes = self.K)
         net = torch.nn.DataParallel(net, device_ids = gpus)
@@ -217,7 +221,8 @@ class Train(object):
 
     def train(self):
         for k in range(self.fold):
-            modelpath, plotpath, matpath = [p.replace("Nov", "%d.Nov" % k) for p in refs]
+            self.net = self.__load_net(self.nettype, self.gpus, self.pretrain)
+            self.opt = self.__load_opt()
             print_to_out("in fold %d:" % k)
             loaders = self.D.load(self.batch_size)
             for i in range(1, self.iters + 1):
@@ -233,16 +238,16 @@ class Train(object):
                 self.__lr_step(i)
             torch.save(self.net, modelpath)
             self.__evalu(loaders, k)
+            for saved in [modelpath, matpath, plotpath]:
+                os.system("mv %s %s" % (saved, saved.replace("Nov", "%d.Nov" % k)))
 
 
 global modelpath; global plotpath; global matpath; global outfile
 modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-global refs
-refs = [modelpath, plotpath, matpath]
 os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-             "iters":    1,
+             "iters":    25,
                  "K":    4,
           "pretrain":    True,
                 "lr":    2.5e-6,
@@ -251,9 +256,9 @@ params = {
          "smoothing":    0.01,
               "step":    1,
       "weight_decay":    6e-3,
-              "gpus":    [0, 1,2],
+              "gpus":    [0,1,2],
               "fold":    4,
-           "nettype":    "densenet"
+           "nettype":    "resnet"
 }
 for k, v in params.items():
     print_to_out(k, ':', v)
