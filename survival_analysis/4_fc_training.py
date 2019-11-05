@@ -66,7 +66,7 @@ class SurvDataset(torch.utils.data.Dataset):
         return self.length
       
 class Data(object):
-    def __init__(self, h5path, fold = 4):
+    def __init__(self, h5path, fold = 4, k = 0):
         h5 = h5py.File(h5path, 'r')
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
@@ -76,7 +76,7 @@ class Data(object):
         self.postdata = h5['postdata'][:]
         self.names = ['train', 'val', 'test']
         self.fold = fold
-        self.k = 0
+        self.k = k
 
     def __datasets_creater(self):
         train_val = np.arange(len(self.set_pat))[self.set_pat == 0]
@@ -96,12 +96,12 @@ class Data(object):
 
     def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
         datasets = self.__datasets_creater()
-        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
+        loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train', drop_last = name == 'train') for name in self.names}
         mapdic = {i: np.arange(len(self.pat_fig[i]))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
         return loaders, mapdic, self.data, self.postdata
 
 class Train(object):
-    def __init__(self, savedmodel = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True):
+    def __init__(self, savedmodel = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True, fold = 4, k = 0):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -110,7 +110,8 @@ class Train(object):
         self.mission = mission
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path).load(batch_size)
+        self.h5path = h5path
+        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path, fold).load(batch_size, k)
         self.lr = lr
         self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
@@ -120,6 +121,7 @@ class Train(object):
         self.lrstep = lrstep
         self.cbstep = cbstep
         self.ifprint = ifprint
+        self.fold = fold
 
     def __get_opt(self):
         if self.mission == "Surv":
@@ -209,6 +211,16 @@ class Train(object):
         torch.save(self.net, modelpath)
         return cis
 
+    def k_fold_train(self):
+        D = Data(self.h5path, self.fold)
+        for k in range(self.fold):
+            self.loaders, self.mapdic, _, self.postdata = D.load(self.batch_size)
+            self.net = self.__load_net()
+            self.opt = self.__get_opt()
+            cis = self.train(modelpath.replace("Nov", "%d.%d.Nov" % (iii, k)))
+
+
+
 if __name__ == "__main__":
     global modelpath; global plotpath; global matpath; global outfile
     modelpath, plotpath, matpath, outfile = sys.argv[1:5]
@@ -226,7 +238,9 @@ if __name__ == "__main__":
         "optim": "SGD",
         "weight_decay": 1e-3,
         "mission": "Surv", # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
-        "ifprint": False
+        "ifprint": False,
+        "fold": 4,
+        "k": 2,
     }
     # for key, value in params.items():
     #     print_to_out(key, ":", value)
@@ -234,7 +248,7 @@ if __name__ == "__main__":
     global iii
     iii = 0
     ref = modelpath
-    while any([c < 0.65 for c in cis.values()]):
+    while any([c < 0.7 for c in cis.values()]):
         modelpath = ref.replace("Nov", str(iii))
         params['lr'] = 10 ** (np.random.rand() * 7 - 7)
         params['lr_decay'] = 10 ** (np.random.rand() * 7 - 7)
@@ -249,5 +263,7 @@ if __name__ == "__main__":
             params['lr'], params['epochs'], params['lr_decay'], params['layer'], params['p'], params['weight_decay'], params['optim'], 
             cis['train'], cis['val'], cis['test']
         )
+        if any([ci < 0.63 for ci in cis.values()]):
+            os.system("rm %s" % modelpath)
         print_to_out(out)
         iii += 1
