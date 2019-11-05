@@ -164,6 +164,7 @@ class Train(object):
         self.iters = iters
         self.K = K
         self.lr = lr
+        self.lr_bak = lr
         self.batch_size = batch_size
         self.step = step
         self.weight_decay = weight_decay
@@ -240,6 +241,7 @@ class Train(object):
             self.__evalu(loaders, k)
             for saved in [modelpath, matpath, plotpath]:
                 os.system("mv %s %s" % (saved, saved.replace("Nov", "%d.Nov" % k)))
+            self.lr = self.lr_bak
 
 
 global modelpath; global plotpath; global matpath; global outfile
@@ -247,15 +249,15 @@ modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-             "iters":    25,
+             "iters":    100,
                  "K":    4,
           "pretrain":    True,
-                "lr":    2.5e-6,
+                "lr":    2e-6,
         "batch_size":    32,
              "gamma":    2,
          "smoothing":    0.01,
               "step":    1,
-      "weight_decay":    6e-3,
+      "weight_decay":    1e-2,
               "gpus":    [0,1,2],
               "fold":    4,
            "nettype":    "resnet"
