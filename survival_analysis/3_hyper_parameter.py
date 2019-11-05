@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import matplotlib as mpl
 mpl.use('AGG')
@@ -22,15 +23,15 @@ def f():
     d = pd.DataFrame(d)
     d.to_csv('/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/hyperparameter.csv')
 
-def f2(mode):
+def f2(mode, F = lambda x: x):
     import os
     from collections import defaultdict
     import numpy as np
     files = [
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/success.Nov.03_13:45.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_14:26.out", 
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_14:27.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/fail.Nov.03_17:48.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:28.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:29.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:32.out",
+        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:40.out",
     ]
     d = defaultdict(list)
     for fname in files:
@@ -62,8 +63,12 @@ def f2(mode):
             if np.mean(p) > m:
                 m = np.mean(p)
                 n = idx
+        elif mode == "custom":
+            if F(p) > m:
+                m = F(p)
+                n = idx
     print(n)
     print(round(m, ndigits = 3))
     print(' | '.join([k + ": " + str(v[n]) for k, v in d.items()]))
 
-f2('min')
+f2('custom', lambda x: np.dot(x, [0.6, 1., 1.4]) / 3)
