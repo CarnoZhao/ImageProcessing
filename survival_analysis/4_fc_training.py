@@ -73,7 +73,7 @@ class Data(object):
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
-        self.postdata = h5['postdata'][:]
+        self.postdata = h5['postdata%d' % k][:]
         self.names = ['train', 'val', 'test']
         self.fold = fold
         self.k = k
@@ -170,10 +170,7 @@ class Train(object):
         return x if istrain else y
 
     def __get_x(self, pat):
-        if self.mission != 'Surv':
-            return self.data[self.mapdic[int(pat)]]
-        else:
-            return self.postdata[self.mapdic[int(pat)]]
+        return self.postdata[self.mapdic[int(pat)]]
 
     def __call_back(self, i, ifprint = True):
         if i % self.cbstep != 0:
@@ -240,10 +237,11 @@ if __name__ == "__main__":
         "mission": "Surv", # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
         "ifprint": False,
         "fold": 4,
-        "k": 2,
+        "k": 3,
     }
     # for key, value in params.items():
     #     print_to_out(key, ":", value)
+    print_to_out("in fold %d" % params['k'])
     cis = {'train': 0, 'val': 0, 'test': 0}
     global iii
     iii = 0

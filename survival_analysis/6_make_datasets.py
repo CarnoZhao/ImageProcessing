@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
+root = "/wangshuo/zhaox" if os.path.exists("/wangshuo/zhaox") else "/home/tongxueqing/zhao"
 
 class ClassifierDataset(torch.utils.data.Dataset):
     def __init__(self, nameidx, set_pat, pat_fig, data, tps):
@@ -26,7 +27,7 @@ class ClassifierDataset(torch.utils.data.Dataset):
 class Data(object):
     def __init__(self, h5path, infopath = None, figpath = None, ratio = [0.7, 0.15, 0.15], createpost = False):
         if not os.path.exists(h5path):
-            self.__make_h5(h5path, figpath, infopath, ratio, createpost)
+            self.__make_h5(h5path, figpath, infopath)
         h5 = h5py.File(h5path, 'a')
         self.__make_post(h5)
         self.set_pat = h5['set_pat'][:]
@@ -39,18 +40,20 @@ class Data(object):
 
     def __make_post(self, h5):
         with torch.no_grad():
-            net = torch.load("/wangshuo/zhaox/ImageProcessing/stain_classification/_models/2.Nov.05_09:31.model").module
-            net.fc = torch.nn.Identity()
-            net = net.cuda()
-            try: h5.pop('postdata')
-            except: pass
-            h5.create_dataset('postdata', shape = (len(h5['data']), 512))
-            for i in range(len(h5['data'])):
-                img = h5['data'][i:i+1, :, :, :]
-                yhat = net(torch.FloatTensor(img).cuda())
-                h5['postdata'][i, :] = yhat.cpu()
+            for fold in range(4):
+                net = torch.load(os.path.join(root, "ImageProcessing/stain_classification/_models/fold%d.resnet.model" % fold)).module
+                net.fc = torch.nn.Identity()
+                net = net.cuda()
+                post = "postdata%d" % fold
+                try: h5.pop(post)
+                except: pass
+                h5.create_dataset(post, shape = (len(h5['data']), 512))
+                for i in range(len(h5['data'])):
+                    img = h5['data'][i:i+1, :, :, :]
+                    yhat = net(torch.FloatTensor(img).cuda())
+                    h5[post][i, :] = yhat.cpu()
 
-    def __make_h5(self, h5path, figpath, infopath, ratio):
+    def __make_h5(self, h5path, figpath, infopath):
         tpdic = {'huaisi': 0, 'jizhi': 1, 'tumor': 2, 'tumorln': 3}
         tiffiles = [f.strip() for f in os.popen("find %s -name \"*.tif\"" % figpath)]
         info = pd.read_csv(infopath)
@@ -92,7 +95,7 @@ class Data(object):
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train') for name in self.names}
         return loaders
 
-d = Data("/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/compiled.h5", "/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/merged.csv", "/wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets")
+d = Data(os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"))
 
 def make_summary():
     from collections import Counter
