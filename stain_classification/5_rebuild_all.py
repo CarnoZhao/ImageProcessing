@@ -249,18 +249,18 @@ modelpath, plotpath, matpath, outfile = sys.argv[1:5]
 os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 params = {
               "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-             "iters":    100,
+             "iters":    50,
                  "K":    4,
           "pretrain":    True,
-                "lr":    2e-6,
+                "lr":    2.5e-6,
         "batch_size":    32,
              "gamma":    2,
          "smoothing":    0.01,
               "step":    1,
-      "weight_decay":    1e-2,
+      "weight_decay":    6e-3,
               "gpus":    [0,1,2],
               "fold":    4,
-           "nettype":    "resnet"
+           "nettype":    "densenet"
 }
 for k, v in params.items():
     print_to_out(k, ':', v)
