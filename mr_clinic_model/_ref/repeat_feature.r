@@ -6,7 +6,7 @@ repeat_feature <- function(DWI.data,DWI.1){
   if(n1 != n2)
   {stop("First and second must be same number of number")
   }
-  #计算单个特征的ICC
+  #璁＄畻鍗曚釜鐗瑰緛鐨処CC
   library(psych)
   Ficc.inter<-rep(0,n1)
   Ficc.inter.p<-rep(0,n1)
