@@ -32,4 +32,7 @@ for (serie in unique(data$series)) {
 }
 
 subdata = data[data$isrep == 0, c(features, infos)]
+for (f in features) {
+    subdata[,f] = (subdata[,f] - mean(subdata[,f])) / sd(subdata[,f])
+}
 write.csv(subdata, file.path(root, "mr.iccfiltered.csv"))
