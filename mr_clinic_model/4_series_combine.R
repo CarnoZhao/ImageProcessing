@@ -41,6 +41,12 @@ newdata$set = data[match(names, data$name), "set"]
 newdata$name = NULL
 newdata$name = names
 
+to_ci = function(set, cox = cox.new) {
+    pred = predict(cox, newdata = set, type = "lp")
+    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")    
+    ci$c.index
+}
+
 # k-fold prepare
 if (T) {
     valname = matrix(rep(0, 44 * 4), c(44, 4))
@@ -80,6 +86,9 @@ if (T) {
 
 test = newdata[newdata$set == 1,]
 L = list()
+cis = matrix(rep(0, 4 * 4), c(4, 4))
+rownames(cis) = 1:4
+colnames(cis) = c("cit", "civ", "cit.new", "civ.new")
 for (k in 1:4) {
     train = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
     val = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
@@ -127,22 +136,34 @@ for (k in 1:4) {
         }
     }
 
-    summ = summary(cox.new)
-    summ = as.data.frame(summ$coefficients)
+    # val
+    if (T) {
+        cit = to_ci(train)
+        civ = to_ci(val)
+        summ = summary(cox.new)
+        summ = as.data.frame(summ$coefficients)
+        removed = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
+        if (length(removed) == 0) {
+            removed = rownames(summ)[summ[,"Pr(>|z|)"] < max(summ[,"Pr(>|z|)"])]
+        }
+        cox.new.new = coxph(as.formula(paste("Surv(time, event) ~ ", paste(removed, collapse = "+"))), data = train)
+        cit.new = to_ci(train, cox.new.new)
+        civ.new = to_ci(val, cox.new.new)
+        if (civ.new > cit) {
+            L[[k]] = cox.new.new
+        }
+        cis[k,] = c(cit, civ, cit.new, civ.new)
+    }
 }
 
-
-remove = c(
-    "original_shape_Flatness_1"
-)
-
-cox.features = names(cox.new$coefficients) 
-subfeatures = cox.features[!cox.features %in% remove]
-cox.new.new = coxph(as.formula(paste("Surv(time, event) ~ ", paste(subfeatures, collapse = "+"))), data = train)
-
-
-to_ci = function(set, cox = cox.new) {
-    pred = predict(cox, newdata = set, type = "lp")
-    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")    
-    print(ci$c.index)
+combine_pred = function(set) {
+    preds = sapply(L, function(cox) {
+        pred = predict(cox, newdata = set, type = "lp")
+    })
+    pred = rowMeans(preds)
+    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")
+    ci$c.index
 }
+
+print(combine_pred(rbind(train, val)))
+print(combine_pred(test))
