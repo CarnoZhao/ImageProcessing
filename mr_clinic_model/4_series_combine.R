@@ -153,6 +153,7 @@ for (w in (1:n) / n) {
         # val
         models = sapply(subfeatures.list, function(subfeatures) {
             ci.mat = c()
+            model.list = list()
             while (length(subfeatures) != 0 && length(subfeatures) <= 10) {
                 subtrain = train[,c(subfeatures, "time", "event")]
                 cox = coxph(Surv(time, event) ~ . , data = subtrain)
@@ -185,7 +186,15 @@ for (w in (1:n) / n) {
         model
     })
 
-    result[w * n,] = c(w, combine_pred(rbind(train, val), L), combine_pred(test, L))
+    citrs = mean(sapply(1:4, function(k) {
+        tr = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
+        combine_pred(tr, L)
+    }))
+    civls = mean(sapply(1:4, function(k) {
+        vl = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
+        combine_pred(vl, L)
+    }))
+    result[w * n,] = c(w, citrs, civls)
 }
 
-result
+write.csv(result, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_outs/weight_choose.out")
