@@ -13,7 +13,7 @@ if (dir.exists("/wangshuo")) {
     root = "/home/tongxueqing/zhao"
 }
 root = file.path(root, "ImageProcessing/mr_clinic_model/_data")
-set.seed(1)
+set.seed(0)
 
 data = read.csv(file.path(root, "mr.iccfiltered.csv"), header = T, row.names = 1, stringsAsFactors = F)
 labeldata = read.csv(file.path(root, "clinic/info.csv"), header = T, row.names = 1, stringsAsFactors = F)
@@ -44,6 +44,15 @@ newdata$name = names
 to_ci = function(set, cox = cox.new) {
     pred = predict(cox, newdata = set, type = "lp")
     ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")    
+    ci$c.index
+}
+
+combine_pred = function(set, models = L) {
+    preds = sapply(models, function(cox) {
+        pred = predict(cox, newdata = set, type = "lp")
+    })
+    pred = rowMeans(preds)
+    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")
     ci$c.index
 }
 
@@ -84,86 +93,99 @@ if (T) {
     valname[,4] = labeldata$name[match(v4, labeldata$number)]
 }
 
+n = 20
 test = newdata[newdata$set == 1,]
-L = list()
-cis = matrix(rep(0, 4 * 4), c(4, 4))
-rownames(cis) = 1:4
-colnames(cis) = c("cit", "civ", "cit.new", "civ.new")
-for (k in 1:4) {
-    train = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
-    val = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
-    features = colnames(train)[1:153]
+result = matrix(rep(0, 3 * n), c(n, 3))
+for (w in (1:n) / n) {
+    L = lapply(1:4, function(k) {
+        train = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
+        val = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
+        features = colnames(train)[1:153]
 
-    # train
-    if (T) {
-        ## mrmr ##
-        if (T) {
-            mrmr.result = mrmr.cindex(train[,features], train$time, train$event, method = "noether")
-            mrmr.result = sort(mrmr.result, decreasing = T)
-            features.mrmr = names(mrmr.result)[1:round(length(mrmr.result) / 3)]
-        }
+        # selection
+        methods = sapply(1:15, function(x) as.numeric(intToBits(x)[1:4]))
+        subfeatures.list = apply(methods, 2, function(method) {
+            subfeatures = features
+            ## hazard ratio ##
+            if (method[1]) try({
+                hrs = as.data.frame(t(sapply(subfeatures, function(f) {
+                    hr = hazard.ratio(x = train[,f], surv.time = train$time, surv.event = train$event)
+                    p = hr$p.value
+                    cox = coxph(Surv(train$time, train$event) ~ train[,f], data = train)
+                    pred = predict(cox, newdata = train, type = 'lp')
+                    ci = concordance.index(x = pred, surv.time = train$time, surv.event = train$event, method = "noether")
+                    ci = ci$c.index
+                    c("p" = p, "ci" = ci)
+                })))
+                subfeatures = rownames(hrs)[hrs$p < 0.05]
+            })
 
-        ## hazard ratio ##
-        if (T) {
-            hrs = as.data.frame(t(sapply(features.mrmr, function(f) {
-                hr = hazard.ratio(x = train[,f], surv.time = train$time, surv.event = train$event)
-                p = hr$p.value
-                cox = coxph(Surv(train$time, train$event) ~ train[,f], data = train)
-                pred = predict(cox, newdata = train, type = 'lp')
-                ci = concordance.index(x = pred, surv.time = train$time, surv.event = train$event, method = "noether")
-                ci = ci$c.index
-                c("p" = p, "ci" = ci)
-            })))
-            features.hr = rownames(hrs)[hrs$p < 0.05]
-        }
+            ## correlate ##
+            if (method[2]) try({
+                cors = cor(train[,subfeatures])
+                notcors = c()
+                for (f in colnames(cors)) {
+                    if (!f %in% notcors & all(!rownames(cors)[cors[,f] > 0.9] %in% notcors)) {
+                        notcors = c(notcors, f)
+                    }
+                }
+                subfeatures = notcors
+            })
 
-        ## random forest ##
-        if (T) {
-            subtrain = train[,c(features.hr, "time", "event")]
-            rf = rfsrc(Surv(time, event) ~ . , data = subtrain)
-            rf = max.subtree(rf)
-            features.rf = rf$topvars.1se
-        }
-        
-        ## cox model ##
-        if (T) {
-            subtrain = train[,c(features.rf, "time", "event")]
-            cox = coxph(Surv(time, event) ~ . , data = subtrain)
-            sink("/dev/null")
-            cox.new = step(cox, direction = c("both"))
-            L[[k]] = cox.new
-            sink()
-        }
-    }
+            ## mrmr ##
+            if (method[3]) try({
+                mrmr.result = mrmr.cindex(train[,subfeatures], train$time, train$event, method = "noether")
+                mrmr.result = sort(mrmr.result, decreasing = T)
+                subfeatures = names(mrmr.result)[1:min(10, length(mrmr.result))]
+            })
 
-    # val
-    if (T) {
-        cit = to_ci(train)
-        civ = to_ci(val)
-        summ = summary(cox.new)
-        summ = as.data.frame(summ$coefficients)
-        removed = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
-        if (length(removed) == 0) {
-            removed = rownames(summ)[summ[,"Pr(>|z|)"] < max(summ[,"Pr(>|z|)"])]
-        }
-        cox.new.new = coxph(as.formula(paste("Surv(time, event) ~ ", paste(removed, collapse = "+"))), data = train)
-        cit.new = to_ci(train, cox.new.new)
-        civ.new = to_ci(val, cox.new.new)
-        if (civ.new > cit) {
-            L[[k]] = cox.new.new
-        }
-        cis[k,] = c(cit, civ, cit.new, civ.new)
-    }
-}
+            ## random forest ##
+            if (method[4]) try({
+                subtrain = train[,c(subfeatures, "time", "event")]
+                rf = rfsrc(Surv(time, event) ~ . , data = subtrain)
+                rf = max.subtree(rf)
+                subfeatures = rf$topvars.1se
+            })
+            
+            subfeatures
+        })
 
-combine_pred = function(set) {
-    preds = sapply(L, function(cox) {
-        pred = predict(cox, newdata = set, type = "lp")
+        # val
+        models = sapply(subfeatures.list, function(subfeatures) {
+            ci.mat = c()
+            while (length(subfeatures) != 0 && length(subfeatures) <= 10) {
+                subtrain = train[,c(subfeatures, "time", "event")]
+                cox = coxph(Surv(time, event) ~ . , data = subtrain)
+                sink("/dev/null")
+                cox = step(cox, direction = c("both"))
+                sink()
+                citr = to_ci(train, cox)
+                civl = to_ci(val, cox)
+                ci.mat = rbind(ci.mat, c(citr, civl))
+                model.list[[length(model.list) + 1]] = cox
+                summ = summary(cox)
+                summ = as.data.frame(summ$coefficients)
+                if (all(summ[,"Pr(>|z|)"] < 0.05)) {
+                    break
+                } else {
+                    subfeatures = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
+                }
+            }
+            if (length(ci.mat) != 0){
+                ci.mat = rowSums(ci.mat * c(w, 1 - w))
+                idx = match(max(ci.mat), ci.mat)
+                list("model" = model.list[[idx]], "ci.mat" = ci.mat[idx])
+            } else{
+                NULL
+            }
+        })
+        models = Filter(Negate(is.null), models)
+        cis = sapply(models, function(x) x$ci.mat)
+        model = models[[match(max(cis), cis)]]$model
+        model
     })
-    pred = rowMeans(preds)
-    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")
-    ci$c.index
+
+    result[w * n,] = c(w, combine_pred(rbind(train, val), L), combine_pred(test, L))
 }
 
-print(combine_pred(rbind(train, val)))
-print(combine_pred(test))
+result
