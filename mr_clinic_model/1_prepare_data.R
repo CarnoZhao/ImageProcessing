@@ -5,8 +5,8 @@ if (dir.exists("/wangshuo")) {
     root = "/home/tongxueqing/zhao"
 }
 
-root = file.path(root, "ImageProcessing/mr_clinic_model/_data")
-files = list.files(root, recursive = T, full.names = T)
+root = file.path(root, "ImageProcessing/mr_clinic_model/_data/")
+files = list.files(file.path(root, "MR"), recursive = T, full.names = T)
 files = files[grepl("(xlsx|csv)$", files)]
 
 hosis = c("ZF", "ZF_add", "ZF_re", "GX")
@@ -46,7 +46,6 @@ for (hosi in hosis) {
         } else {
             cnames = colnames(D)
         }
-        write.csv(D, file.path(root, hosi, paste(serie, "_replaced.csv", sep = "")))
         data = rbind(data, D)
     }
 }
