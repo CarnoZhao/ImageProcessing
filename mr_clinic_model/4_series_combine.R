@@ -38,8 +38,6 @@ for (serie in unique(data$series)) {
 newdata$time = data[match(names, data$name), "time"]
 newdata$event = data[match(names, data$name), "event"]
 newdata$set = data[match(names, data$name), "set"]
-newdata$name = NULL
-newdata$name = names
 
 to_ci = function(set, cox = cox.new) {
     pred = predict(cox, newdata = set, type = "lp")
@@ -96,7 +94,9 @@ if (T) {
 n = 20
 test = newdata[newdata$set == 1,]
 result = matrix(rep(0, 3 * n), c(n, 3))
+Ls = list()
 for (w in (1:n) / n) {
+# for (w in c(0.9)) {
     L = lapply(1:4, function(k) {
         train = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
         val = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
@@ -195,6 +195,9 @@ for (w in (1:n) / n) {
         combine_pred(vl, L)
     }))
     result[w * n,] = c(w, citrs, civls)
+    Ls[[length(Ls) + 1]] = L
 }
-
+saveRDS(Ls, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_data/Ls.rds")
+combine_pred(test, L)
+combine_pred(newdata[newdata$set == 0,], L)
 write.csv(result, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_outs/weight_choose.out")
