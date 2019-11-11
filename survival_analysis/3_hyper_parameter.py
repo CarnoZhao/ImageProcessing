@@ -23,16 +23,16 @@ def f():
     d = pd.DataFrame(d)
     d.to_csv('/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/hyperparameter.csv')
 
-def f2(mode, F = lambda x: x):
+def f2(mode, A = [1, 1, 1]):
+    if isinstance(A, list):
+        F = lambda x: np.dot(x, A) / sum(A)
+    else:
+        F = A
     import os
     from collections import defaultdict
     import numpy as np
-    files = [
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:28.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:29.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:32.out",
-        "/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/Nov.05_20:40.out",
-    ]
+    times = ["20:40", "20:29", "20:28", "20:32", "22:17", "15:35", "15:36", "15:37", "15:38"]
+    files = ["/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs/" + f for f in os.listdir("/wangshuo/zhaox/ImageProcessing/survival_analysis/_outs") if any([t in f for t in times])]
     d = defaultdict(list)
     for fname in files:
         with open(fname) as f:
@@ -52,7 +52,7 @@ def f2(mode, F = lambda x: x):
                         pass
                     d[k].append(v)
                 ln += 1
-    m = 0
+    m = -2 ** 31
     n = -1
     for idx, p in enumerate(zip(d['citr'], d['civl'], d['cits'])):
         if mode == 'min':
@@ -67,8 +67,7 @@ def f2(mode, F = lambda x: x):
             if F(p) > m:
                 m = F(p)
                 n = idx
-    print(n)
     print(round(m, ndigits = 3))
     print(' | '.join([k + ": " + str(v[n]) for k, v in d.items()]))
 
-f2('custom', lambda x: np.dot(x, [0.6, 1., 1.4]) / 3)
+f2('custom', lambda x: x[0] if x[1] > x[0] and x[2] > x[0] else -2 ** 32)
