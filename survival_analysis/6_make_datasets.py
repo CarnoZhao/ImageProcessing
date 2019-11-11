@@ -29,7 +29,8 @@ class Data(object):
         if not os.path.exists(h5path):
             self.__make_h5(h5path, figpath, infopath)
         h5 = h5py.File(h5path, 'a')
-        self.__make_post(h5)
+        # self.__make_post(h5)
+        self.__make_pred(h5)
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
@@ -52,6 +53,19 @@ class Data(object):
                     img = h5['data'][i:i+1, :, :, :]
                     yhat = net(torch.FloatTensor(img).cuda())
                     h5[post][i, :] = yhat.cpu()
+    
+    def __make_pred(self, h5):
+        with torch.no_grad():
+            net = torch.load(os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Nov.06_14:18.model")).module
+            net.fc = torch.nn.Identity()
+            net = net.cuda()
+            try: h5.pop("pred")
+            except: pass
+            h5.create_dataset("pred", shape = (len(h5['data']), 1))
+            for i in range(len(h5['data'])):
+                img = h5['data'][i:i+1, :, :, :]
+                yhat = net(torch.FloatTensor(img).cuda())
+                h5['pred'][i] = yhat.cpu()
 
     def __make_h5(self, h5path, figpath, infopath):
         tpdic = {'huaisi': 0, 'jizhi': 1, 'tumor': 2, 'tumorln': 3}
@@ -113,3 +127,4 @@ def tpscount(i, set_pat, pat_fig, tps):
     fig = pat_fig[pats]
     fig = np.sum(fig, axis = 0, dtype = np.bool)
     tp = tps[fig]
+
