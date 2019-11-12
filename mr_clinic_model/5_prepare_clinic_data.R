@@ -22,7 +22,7 @@ if (T) {
 if (T) {
     data = read.csv(file.path(root, "clinic/ClinicMessageForAnalysis.csv"), stringsAsFactors = F)
     colnames(data) = c(
-        "name", "realname", "smoke", "family.history", "number", 
+        "name", "smoke", "family.history", "number", 
         "T.read", "N.read", "total.cut", "gender", "age", "body.status", 
         "neuron", "EVB", "HB", "LDH", "sarcoma", "necrosis", "lymphocyte", 
         "N.cut.N3b", "total.cut.IVA", "event", "time"
