@@ -6,6 +6,8 @@ suppressPackageStartupMessages({
     library(Hmisc)
     library(rms)
 })
+CUT1 = 30
+CUT2 = 60
 
 to_pred = function(data, cox) {
     features = names(cox$coefficients)
@@ -23,7 +25,11 @@ to_ci = function(data, cox) {
 }
 
 make_sig = function(data, features) {
-    subdata = data[,features]
+    if (length(features) == 1) {
+        subdata = data.frame(a = data[,features])
+    } else {
+        subdata = data[,features]
+    }
     time = data$time
     event = data$event
     cox = coxph(Surv(time, event) ~ ., data = subdata)
@@ -63,7 +69,7 @@ risk_plot = function(data, cutoff, name) {
         n.risk.step = 12,
         n.risk.cex = 1, 
         mark.time = T, 
-        v.line = c(38,60),
+        v.line = c(CUT1, CUT2),
         main.title = set)
     sink()
 }
@@ -80,13 +86,13 @@ roc_plot = function(data, name) {
         Stime = data$time, 
         status = data$event, 
         data[,name], 
-        predict.time = 36, 
+        predict.time = CUT1, 
         span = 0.001 * n ^ (-0.2))
     t2 = survivalROC(
         Stime = data$time, 
         status = data$event, 
         data[,name], 
-        predict.time = 60, 
+        predict.time = CUT2, 
         span = 0.001 * n ^ (-0.2))
     plot(
         t1$FP, 
@@ -103,8 +109,8 @@ roc_plot = function(data, name) {
     legend(
         "bottomright",
         legend = c(
-            paste0('3-year: AUC = ', round(t1$AUC, 3)), 
-            paste0('5-year: AUC = ', round(t2$AUC, 3))),
+            paste0(CUT1 / 12, '-year: AUC = ', round(t1$AUC, 3)), 
+            paste0(CUT2 / 12, '-year: AUC = ', round(t2$AUC, 3))),
         col = c(
             rgb(254 / 255, 67 / 255, 101 / 255),
             rgb(0, 0, 0)),
@@ -116,6 +122,7 @@ roc_plot = function(data, name) {
 }
 
 nomo_plot = function(data, name, features.list) {
+    opar = par(no.readonly = T)
     par(mfrow = c(1, 1))
     features = features.list[[name]]
     sink("/dev/null")
@@ -129,31 +136,38 @@ nomo_plot = function(data, name, features.list) {
     nom = nomogram(
         f, 
         fun = list(
-            function(x) surv.prob(36, x),
-            function(x) surv.prob(60, x)),
-        funlabel = c("3-year DFS rate", "5-year DFS rate"),
+            function(x) surv.prob(CUT1, x),
+            function(x) surv.prob(CUT2, x)),
+        funlabel = c(paste0(CUT1 / 12, "-year DFS rate"), paste0(CUT2 / 12, "-year DFS rate")),
         fun.at = 10:0 / 10,
         lp = F)
     plot(nom, xfrac = 0.3, cex.axis = 1.3, cex.var = 1.3)
-    par(mfrow = c(1, 2))
+    par(opar)
 }
 
-calibration_plot = function(data, name) {
+HLtest = function(cal){
+    len = cal[,'n']
+    meanp = cal[,'mean.predicted']
+    sump = meanp * len
+    sumy = cal[, 'KM'] * len
+    contr = ((sumy - sump) ^ 2) / (len * meanp * (1 - meanp))
+    chisqr = sum(contr)
+    pval = 1 - pchisq(chisqr, length(len) - 2)
+    return(pval)
+}
+
+calibration_plot = function(data, name, features.list) {
     pos = 0
     sink("/dev/null")
     f3 = cph(
-        as.formula(paste0("Surv(time, event) ~ ", name)), 
-        surv = T, x = T, y = T, data = data, time.inc = 36)
-    f5 = cph(
-        as.formula(paste0("Surv(time, event) ~ ", name)), 
-        surv = T, x = T, y = T, data = data, time.inc = 60)
+        as.formula(
+            paste0("Surv(time, event) ~ ", #name)),
+             paste(features, collapse = " + "))),
+        surv = T, x = T, y = T, data = data, time.inc = CUT1)
     cal3 = calibrate(
-        f3, u = 36, cmethod = "KM", method = "boot", 
-        B = nrow(data) * 3, m = floor(nrow(data) / 3), surv = T, time.inc = 36)
-    cal5 = calibrate(
-        f5, u = 60, cmethod = "KM", method = "boot", 
-        B = nrow(data) * 3, m = floor(nrow(data) / 3), surv = T, time.inc = 60)
-
+        f3, u = CUT1, cmethod = "KM", method = "boot", 
+        m = floor(nrow(data) / 3), surv = T)
+    p3 = round(HLtest(cal3), 3)
     x1 = c(rgb(0, 112, 255, maxColorValue = 255))
     plot(
         cal3, lty = 1, pch = 16, 
@@ -165,24 +179,32 @@ calibration_plot = function(data, name) {
         xlab="Nomogram-Predicted Probability DFS",
         ylab="Observed Actual DFS (Proportion)")
 
+    try({
+        f5 = cph(
+            as.formula(
+            paste0("Surv(time, event) ~ ", #name)),
+            paste(features, collapse = " + "))),
+            surv = T, x = T, y = T, data = data, time.inc = CUT2)
+        cal5 = calibrate(
+            f5, u = CUT2, cmethod = "KM", method = "boot", 
+            m = floor(nrow(data) / 3), surv = T)
+        p5 = round(HLtest(cal5), 3)
+        x3 = c(rgb(209, 73, 85, maxColorValue = 255))
+            plot(
+                cal5, lty = 1, pch = 16, 
+                errbar.col = x3, 
+                par.corrected = list(col = x3), 
+                conf.int = T, lwd = 1.2,
+                xlim = c(pos, 1), ylim = c(pos, 1), 
+                riskdist = F, col = "red", add = T)
+    })
+
     x2 = c(rgb(220, 220, 220, maxColorValue = 255))
     abline(pos, 1, lty = 3, col = x2, lwd = 1)
 
-    x3 = c(rgb(209, 73, 85, maxColorValue = 255))
-    plot(
-        cal5, lty = 1, pch = 16, 
-        errbar.col = x3, 
-        par.corrected = list(col = x3), 
-        conf.int = T, lwd = 1.2,
-        xlim = c(pos, 1), ylim = c(pos, 1), 
-        riskdist = F, col = "red", add = T)
-
-    # axis(1, at = seq(pos, 1, 0.1), labels = seq(pos, 1, 0.1), pos = pos)
-    # axis(2, at = seq(pos, 1, 0.1), labels = seq(pos, 1, 0.1), pos = pos)
-
     legend(
         "bottomright", 
-        legend = c('3-year DFS: p = ','5-year DFS: p = '), 
+        legend = c(paste0(CUT1 / 12, '-year DFS: p = ', p3), paste0(CUT2 / 12, '-year DFS: p = ', p5)), 
         col = c('blue', 'red'), 
         lwd = 2, cex = 1.5, lty = c(1, 1))
     sink()
