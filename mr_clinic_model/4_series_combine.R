@@ -22,22 +22,6 @@ data = data[data$name %in% common.name,]
 data$time = labeldata$time[match(data$name, labeldata$name)]
 data$event = labeldata$event[match(data$name, labeldata$name)]
 
-# features = colnames(data)[1:(ncol(data) - 7)]
-
-# names = unique(data$name)
-# newdata = data.frame(name = names)
-# for (serie in unique(data$series)) {
-#     subdata = data[data$series == serie,]
-#     subdata = subdata[match(subdata$name, names), features]
-#     colnames(subdata) = paste(colnames(subdata), serie, sep = "_")
-#     for (col in colnames(subdata)) {
-#         newdata[,col] = subdata[,col]
-#     }
-# }
-# newdata$time = data[match(names, data$name), "time"]
-# newdata$event = data[match(names, data$name), "event"]
-# newdata$set = data[match(names, data$name), "set"]
-
 to_ci = function(set, cox = cox.new) {
     pred = predict(cox, newdata = set, type = "lp")
     ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")    
@@ -53,7 +37,8 @@ combine_pred = function(set, models = L) {
         s.set = s.set[match(s.set$name, names),]
         pred = predict(models[[s]], newdata = s.set, type = "lp")
     })
-    pred = rowMeans(preds)
+    # pred = rowMeans(preds)
+    pred = apply(preds, 1, max)
     ci = concordance.index(x = pred, surv.time = time, surv.event = event, method = "noether")
     ci$c.index
 }
@@ -141,7 +126,7 @@ models.all = lapply(1:3, function(s) {
         if (method[3]) try({
             mrmr.result = mrmr.cindex(train[,subfeatures], train$time, train$event, method = "noether")
             mrmr.result = sort(mrmr.result, decreasing = T)
-            subfeatures = names(mrmr.result)[1:min(10, length(mrmr.result))]
+            subfeatures = names(mrmr.result)[1:min(20, length(mrmr.result))]
         })
 
         ## random forest ##
@@ -157,7 +142,7 @@ models.all = lapply(1:3, function(s) {
     # val
     models = lapply(subfeatures.list, function(subfeatures) {
         model.list = list()
-        while (length(subfeatures) != 0 && length(subfeatures) <= 10) {
+        while (length(subfeatures) != 0 && length(subfeatures) <= 20) {
             subtrain = train[,c(subfeatures, "time", "event")]
             cox = coxph(Surv(time, event) ~ . , data = subtrain)
             sink("/dev/null")
@@ -175,13 +160,7 @@ models.all = lapply(1:3, function(s) {
         if (length(model.list) == 0) {NULL}
         else {model.list}
     })
-    models.k = list()
-    for (model.list in models) {
-        for (model in model.list) {
-            models.k[[length(models.k) + 1]] = model
-        }
-    }
-    models.k
+    do.call(c, models)
 })
 
 n = 20
@@ -215,12 +194,23 @@ Ls = readRDS(file.path(root, "ImageProcessing/mr_clinic_model/_data/Ls_mr.rds"))
 result = t(sapply(1:n / n, function(w) {
     L = Ls[[w * n]]
     citr = combine_pred(trainAll, L)
-    civl = combine_pred(rbind(trainAll, valAll), L)
+    civl = combine_pred(valAll, L)
     cits = combine_pred(test, L)
-    result[w * n,] = c(w, citr, civl, cits)
+    c(w, citr, civl, cits)
 }))
+result
+result[order(rowMeans(result[,2:3])),]
+L = Ls[[match(max(rowMeans(result[,2:3])), rowMeans(result[,2:3]))]]
 
-L = Ls[[match(max(result[,2]), result[,2])]]
+split.result = t(sapply(1:n / n, function(w) {
+    L = Ls[[w * n]]
+    citr = sapply(3:3, function(s) to_ci(trainAll[trainAll$series == s,], L[[s]]))
+    civl = sapply(3:3, function(s) to_ci(valAll[valAll$series == s,], L[[s]]))
+    cits = sapply(3:3, function(s) to_ci(test[test$series == s,], L[[s]]))
+    c(w, citr, civl, cits)
+}))
+split.result
+
 newpreds = sapply(1:3, function(s) {
     cox = L[[s]]
     pred = predict(cox, newdata = data[data$series == s,], type = "lp")
@@ -228,6 +218,7 @@ newpreds = sapply(1:3, function(s) {
 
 cname = paste("mr_serie", 1:3, sep = '')
 preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
-preds[,grepl("mr_fold", colnames(preds))] = NULL
-preds[,cname] = newpreds[match(data$name, preds$name),]
+preds[,grepl("mr_serie", colnames(preds))] = NULL
+# preds[,cname] = newpreds[match(data$name, preds$name),]
+preds[,"sig_mr"] = apply(newpreds, 1, max)
 write.csv(preds, file.path(root, "ImageProcessing/combine_model/_data/preds.csv"))

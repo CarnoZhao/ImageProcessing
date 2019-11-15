@@ -47,51 +47,51 @@ test = data[data$set == 1,]
 
 
 # selection
-    methods = sapply(1:15, function(x) as.numeric(intToBits(x)[1:4]))
-    subfeatures.list = apply(methods, 2, function(method) {
-        subfeatures = features
-        ## hazard ratio ##
-        if (method[1]) try({
-            hrs = as.data.frame(t(sapply(subfeatures, function(f) {
-                hr = hazard.ratio(x = train[,f], surv.time = train$time, surv.event = train$event)
-                p = hr$p.value
-                cox = coxph(Surv(train$time, train$event) ~ train[,f], data = train)
-                pred = predict(cox, data = train, type = 'lp')
-                ci = concordance.index(x = pred, surv.time = train$time, surv.event = train$event, method = "noether")
-                ci = ci$c.index
-                c("p" = p, "ci" = ci)
-            })))
-            subfeatures = rownames(hrs)[hrs$p < 0.05]
-        })
-
-        ## correlate ##
-        if (method[2]) try({
-            cors = cor(train[,subfeatures])
-            notcors = c()
-            for (f in colnames(cors)) {
-                if (!f %in% notcors & all(!rownames(cors)[cors[,f] > 0.9] %in% notcors)) {
-                    notcors = c(notcors, f)
-                }
-            }
-            subfeatures = notcors
-        })
-
-        ## mrmr ##
-        if (method[3]) try({
-            mrmr.result = mrmr.cindex(train[,subfeatures], train$time, train$event, method = "noether")
-            mrmr.result = sort(mrmr.result, decreasing = T)
-            subfeatures = names(mrmr.result)[1:min(10, length(mrmr.result))]
-        })
-
-        ## random forest ##
-        if (method[4]) try({
-            subtrain = train[,c(subfeatures, "time", "event")]
-            rf = rfsrc(Surv(time, event) ~ . , data = subtrain)
-            rf = max.subtree(rf)
-            subfeatures = rf$topvars.1se
-        })
-        subfeatures
+methods = sapply(1:15, function(x) as.numeric(intToBits(x)[1:4]))
+subfeatures.list = apply(methods, 2, function(method) {
+    subfeatures = features
+    ## hazard ratio ##
+    if (method[1]) try({
+        hrs = as.data.frame(t(sapply(subfeatures, function(f) {
+            hr = hazard.ratio(x = train[,f], surv.time = train$time, surv.event = train$event)
+            p = hr$p.value
+            cox = coxph(Surv(train$time, train$event) ~ train[,f], data = train)
+            pred = predict(cox, data = train, type = 'lp')
+            ci = concordance.index(x = pred, surv.time = train$time, surv.event = train$event, method = "noether")
+            ci = ci$c.index
+            c("p" = p, "ci" = ci)
+        })))
+        subfeatures = rownames(hrs)[hrs$p < 0.05]
     })
+
+    ## correlate ##
+    if (method[2]) try({
+        cors = cor(train[,subfeatures])
+        notcors = c()
+        for (f in colnames(cors)) {
+            if (!f %in% notcors & all(!rownames(cors)[cors[,f] > 0.9] %in% notcors)) {
+                notcors = c(notcors, f)
+            }
+        }
+        subfeatures = notcors
+    })
+
+    ## mrmr ##
+    if (method[3]) try({
+        mrmr.result = mrmr.cindex(train[,subfeatures], train$time, train$event, method = "noether")
+        mrmr.result = sort(mrmr.result, decreasing = T)
+        subfeatures = names(mrmr.result)[1:min(10, length(mrmr.result))]
+    })
+
+    ## random forest ##
+    if (method[4]) try({
+        subtrain = train[,c(subfeatures, "time", "event")]
+        rf = rfsrc(Surv(time, event) ~ . , data = subtrain)
+        rf = max.subtree(rf)
+        subfeatures = rf$topvars.1se
+    })
+    subfeatures
+})
 
 # val
 models = lapply(subfeatures.list, function(subfeatures) {
@@ -116,13 +116,14 @@ models = lapply(subfeatures.list, function(subfeatures) {
 })
 Ls = do.call(c, models)
 
+Ls = readRDS("/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_data/Ls_clinic_biHB.rds")
 result = t(sapply(Ls, function(cox) {
     citr = to_ci(train, cox)
     civl = to_ci(val, cox)
     cits = to_ci(test, cox)
     c(citr, civl, cits)
 }))
-
+result[order(result[,2]),]
 saveRDS(Ls, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_data/Ls_clinic_biHB.rds")
 write.csv(result, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_outs/weight_choose_clinic_biHB.out")
 
