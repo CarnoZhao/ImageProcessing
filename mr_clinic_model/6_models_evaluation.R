@@ -171,13 +171,14 @@ results = t(sapply(1:length(Ls), function(i) {
     L = Ls[[i]]
     citrs = mean(sapply(1:4, function(k) {
         tr = newdata[newdata$set == 0 & !newdata$name %in% valname[,k],]
-        combine_pred(tr, L)
+        to_ci(tr, L[[k]])
     }))
     civls = mean(sapply(1:4, function(k) {
         vl = newdata[newdata$set == 0 & newdata$name %in% valname[,k],]
-        combine_pred(vl, L)
+        to_ci(vl, L[[k]])
     }))
-    c(citrs, civls)
+    cits = combine_pred(newdata[newdata$set == 0,], L)
+    c(citrs, civls, cits)
 }))
 L = Ls[[19]]
 combine_pred(newdata[newdata$set == 0,], L)

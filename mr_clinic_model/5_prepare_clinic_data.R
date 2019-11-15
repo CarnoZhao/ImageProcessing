@@ -41,13 +41,12 @@ combine_pred = function(set, models = L) {
     ci$c.index
 }
 
+train = data[data$set == 0 & !data$name %in% k_fold[,2],]
+val = data[data$set == 0 & data$name %in% k_fold[,2],]
+test = data[data$set == 1,]
 
-n = 20
-models.all = lapply(1:4, function(k) {
-    train = data[data$set == 0 & !data$name %in% k_fold[,k],]
-    val = data[data$set == 0 & data$name %in% k_fold[,k],]
 
-    # selection
+# selection
     methods = sapply(1:15, function(x) as.numeric(intToBits(x)[1:4]))
     subfeatures.list = apply(methods, 2, function(method) {
         subfeatures = features
@@ -94,73 +93,46 @@ models.all = lapply(1:4, function(k) {
         subfeatures
     })
 
-    # val
-    models = lapply(subfeatures.list, function(subfeatures) {
-        model.list = list()
-        while (length(subfeatures) != 0 && length(subfeatures) <= 10) {
-            subtrain = train[,c(subfeatures, "time", "event")]
-            cox = coxph(Surv(time, event) ~ . , data = subtrain)
-            sink("/dev/null")
-            cox = step(cox, direction = c("both"))
-            sink()
-            model.list[[length(model.list) + 1]] = cox
-            summ = summary(cox)
-            summ = as.data.frame(summ$coefficients)
-            if (all(summ[,"Pr(>|z|)"] < 0.05)) {
-                break
-            } else {
-                subfeatures = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
-            }
-        }
-        if (length(model.list) == 0) {NULL}
-        else {model.list}
-    })
-    models.k = list()
-    for (model.list in models) {
-        for (model in model.list) {
-            models.k[[length(models.k) + 1]] = model
+# val
+models = lapply(subfeatures.list, function(subfeatures) {
+    model.list = list()
+    while (length(subfeatures) != 0 && length(subfeatures) <= 10) {
+        subtrain = train[,c(subfeatures, "time", "event")]
+        cox = coxph(Surv(time, event) ~ . , data = subtrain)
+        sink("/dev/null")
+        cox = step(cox, direction = c("both"))
+        sink()
+        model.list[[length(model.list) + 1]] = cox
+        summ = summary(cox)
+        summ = as.data.frame(summ$coefficients)
+        if (all(summ[,"Pr(>|z|)"] < 0.05)) {
+            break
+        } else {
+            subfeatures = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
         }
     }
-    models.k
+    if (length(model.list) == 0) {NULL}
+    else {model.list}
 })
+Ls = do.call(c, models)
 
-result = matrix(rep(0, 3 * n), c(n, 3))
-Ls = list()
-for(w in 1:n / n) {
-    L = lapply(models.all, function(models) {
-        train = data[data$set == 0 & !data$name %in% k_fold[,k],]
-        val = data[data$set == 0 & data$name %in% k_fold[,k],]
-        models = Filter(Negate(is.null), models)
-        cis = sapply(models, function(cox) {
-            citr = to_ci(train, cox)
-            civl = to_ci(val, cox)
-            citr * w + (1 - w) * civl
-        })
-        model = models[[match(max(cis), cis)]]
-        model
-    })
-    citr = mean(sapply(1:4, function(k) {
-        tr = data[data$set == 0 & !data$name %in% k_fold[,k],]
-        to_ci(tr, L[[k]])
-    }))
-    civl = mean(sapply(1:4, function(k) {
-        vl = data[data$set == 0 & data$name %in% k_fold[,k],]
-        to_ci(vl, L[[k]])
-    }))
-    result[w * n,] = c(w, citr, civl)
-    Ls[[w * n]] = L
-}
+result = t(sapply(Ls, function(cox) {
+    citr = to_ci(train, cox)
+    civl = to_ci(val, cox)
+    cits = to_ci(test, cox)
+    c(citr, civl, cits)
+}))
 
 saveRDS(Ls, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_data/Ls_clinic_biHB.rds")
 write.csv(result, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_outs/weight_choose_clinic_biHB.out")
 
-L = Ls[[match(max(result[,3]), result[,3])]]
-cits = combine_pred(test, L)
-newpreds = sapply(L, function(cox) {
-    pred = predict(cox, newdata = data, type = "lp")
-})
+L = Ls[[match(max(result[,2]), result[,2])]]
+cits = to_ci(test, L)
+newpred = predict(L, newdata = data, type = "lp")
 
-cname = paste("cli_fold", 1:4, sep = '')
+cname = "sig_cli"
 preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
-preds[,cname] = newpreds[match(data$name, preds$name),]
+preds[,grepl("cli_fold", colnames(preds))] = NULL
+preds[,cname] = newpred[match(data$name, preds$name)]
+preds$set = data$set[match(data$name, preds$name)]
 write.csv(preds, file.path(root, "ImageProcessing/combine_model/_data/preds.csv"))
