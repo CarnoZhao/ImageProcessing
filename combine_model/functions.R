@@ -5,28 +5,34 @@ suppressPackageStartupMessages({
     library(ggplot2)
     library(Hmisc)
     library(rms)
+    library(survminer)
 })
-CUT1 = 30
+CUT1 = 36
 CUT2 = 60
 
 to_pred = function(data, cox) {
     features = names(cox$coefficients)
-    subdata = data[,features]
     time = data$time
     event = data$event
-    pred = predict(cox, newdata = subdata, type = "lp")
+    pred = predict(cox, newdata = data, type = "lp")
     data.frame(pred, time, event)
 }
 
-to_ci = function(data, cox) {
+to_raw_ci = function(data, cox) {
     df = to_pred(data, cox)
-    ci = concordance.index(x = df$pred, surv.time = df$time, surv.event = df$event, method = "noether")   
+    ci = concordance.index(x = df$pred, surv.time = df$time, surv.event = df$event, method = "noether")
+    ci
+}
+
+to_ci = function(data, cox) {
+    ci = to_raw_ci(data, cox)  
     ci$c.index
 }
 
 make_sig = function(data, features) {
     if (length(features) == 1) {
-        subdata = data.frame(a = data[,features])
+        subdata = data.frame(data[,features])
+        colnames(subdata) = features
     } else {
         subdata = data[,features]
     }
@@ -35,8 +41,8 @@ make_sig = function(data, features) {
     cox = coxph(Surv(time, event) ~ ., data = subdata)
     pred = predict(cox, newdata = subdata, type = 'lp')
     ci = concordance.index(x = pred, surv.time = time, surv.event = event, method = "noether")
-    ci = ci$c.index
-    return(list("model" = cox, "pred" = pred, "citr" = ci))
+    cix = ci$c.index
+    return(list("model" = cox, "pred" = pred, "citr" = cix, "ci" = ci))
 }
 
 cut_off = function(data, name) {
@@ -53,26 +59,55 @@ risk_plot = function(data, cutoff, name) {
     stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
     if (all(data$set == 0)) {set = 'train'}
     else {set = 'test'}
-    sink("/dev/null")
     km.coxph.plot(
         formula.s = Surv(time, event) ~ stra, 
-        data.s = stra.df, 
-        leg.inset = 0.02,
-        .lwd = c(2,2),
+        data.s = stra.df, leg.inset = 0.02,
+        .lwd = c(2,2), .col = c('black','red'),
         x.label = "Time (months)",
         y.label = "Probability of Survival",
-        main = "",
-        .col = c('black','red'),
         leg.text = paste(c("Low risk", "High risk"), " ", sep = ""),
         leg.pos = "bottomright",
         show.n.risk = TRUE,
-        n.risk.step = 12,
-        n.risk.cex = 1, 
-        mark.time = T, 
-        v.line = c(CUT1, CUT2),
-        main.title = set)
-    sink()
+        n.risk.step = 12, n.risk.cex = 1, 
+        mark.time = T,  v.line = c(CUT1, CUT2),
+        main.title = set, verbose = F)
 }
+
+risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {
+    stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
+    stra.df$cutby = info[match(data$name, info$name), cutby]
+    stra.df$stra.cut = paste(stra.df$stra, stra.df$cutby, sep = ".")
+    ps = sapply(unique(stra.df$stra), function(s) {
+        tmp = stra.df[stra.df$stra == s,]
+        p = summary(coxph(Surv(time, event) ~ cutby, data = tmp))$sctest["pvalue"]
+        signif(p, 3)
+    })
+    names(ps) = unique(stra.df$stra)
+    if (all(data$set == 0)) {
+        set = 'train'
+    } else {set = 'test'}
+    km.coxph.plot(
+        formula.s = Surv(time, event) ~ stra.cut, 
+        data.s = stra.df, leg.inset = 0.02,
+        .lwd = c(2,2), .col = rep(c('black','red'), each = 2), .lty = rep(c(1, 2), 2),
+        x.label = "Time (months)",
+        y.label = "Probability of Survival",
+        leg.text = paste(
+            rep(c("Low", "High"), each = 2), 
+            "risk",
+            rep(cutby.names, 2),
+            rep(c("", " P =")),
+            c("", ps[1], "", ps[2]), sep = " "),
+        leg.pos = "bottomleft", leg.bty = "n",
+        show.n.risk = F,
+        o.text = "",
+        mark.time = T,  v.line = c(CUT1, CUT2),
+        main.title = set, verbose = F)
+}
+
+# png("/home/tongxueqing/zhao/ImageProcessing/combine_model/_plots/test.png")
+# risk_plot_strat(rbind(val, test), cutoff, name, info, cutby, cutby.names)
+# dev.off()
 
 rowMax = function(df) {
     apply(as.matrix(df), 1, max)
@@ -149,14 +184,17 @@ HLtest = function(cal){
     len = cal[,'n']
     meanp = cal[,'mean.predicted']
     sump = meanp * len
-    sumy = cal[, 'KM'] * len
+    sumy = cal[,'KM'] * len
     contr = ((sumy - sump) ^ 2) / (len * meanp * (1 - meanp))
     chisqr = sum(contr)
     pval = 1 - pchisq(chisqr, length(len) - 2)
     return(pval)
 }
 
-calibration_plot = function(data, name, features.list) {
+calibration_plot = function(data, name, features.list, npoints = 3) {
+    if (all(data$set == 0)) {set = 'train'}
+    else {set = 'test'}
+    features = features.list[[name]]
     pos = 0
     sink("/dev/null")
     f3 = cph(
@@ -165,46 +203,43 @@ calibration_plot = function(data, name, features.list) {
              paste(features, collapse = " + "))),
         surv = T, x = T, y = T, data = data, time.inc = CUT1)
     cal3 = calibrate(
-        f3, u = CUT1, cmethod = "KM", method = "boot", 
-        m = floor(nrow(data) / 3), surv = T)
+        f3, u = CUT1, cmethod = "KM", method = "boot",
+        B = 30, m = floor(nrow(data) / npoints), surv = T)
     p3 = round(HLtest(cal3), 3)
-    x1 = c(rgb(0, 112, 255, maxColorValue = 255))
+    color3 = c(rgb(0, 112, 255, maxColorValue = 255))
     plot(
-        cal3, lty = 1, pch = 16, 
-        errbar.col = x1, 
-        par.corrected = list(col = x1), 
-        conf.int = T, lwd = 1.2, 
+        cal3, lty = 1, lwd = 2,
+        errbar.col = color3, 
+        par.corrected = list(col = color3), 
+        conf.int = T, 
         xlim = c(pos, 1), ylim = c(pos, 1), 
         riskdist = F, col = "blue", axes = T,
         xlab="Nomogram-Predicted Probability DFS",
-        ylab="Observed Actual DFS (Proportion)")
+        ylab="Observed Actual DFS (Proportion)", main = set)
 
-    try({
-        f5 = cph(
-            as.formula(
-            paste0("Surv(time, event) ~ ", #name)),
-            paste(features, collapse = " + "))),
-            surv = T, x = T, y = T, data = data, time.inc = CUT2)
-        cal5 = calibrate(
-            f5, u = CUT2, cmethod = "KM", method = "boot", 
-            m = floor(nrow(data) / 3), surv = T)
-        p5 = round(HLtest(cal5), 3)
-        x3 = c(rgb(209, 73, 85, maxColorValue = 255))
-            plot(
-                cal5, lty = 1, pch = 16, 
-                errbar.col = x3, 
-                par.corrected = list(col = x3), 
-                conf.int = T, lwd = 1.2,
-                xlim = c(pos, 1), ylim = c(pos, 1), 
-                riskdist = F, col = "red", add = T)
-    })
-
-    x2 = c(rgb(220, 220, 220, maxColorValue = 255))
-    abline(pos, 1, lty = 3, col = x2, lwd = 1)
+    f5 = cph(
+        as.formula(
+        paste0("Surv(time, event) ~ ", #name)),
+        paste(features, collapse = " + "))),
+        surv = T, x = T, y = T, data = data, time.inc = CUT2)
+    cal5 = calibrate(
+        f5, u = CUT2, cmethod = "KM", method = "boot",
+        B = 30, m = floor(nrow(data) / npoints), surv = T)
+    p5 = round(HLtest(cal5), 3)
+    color5 = c(rgb(209, 73, 85, maxColorValue = 255))
+    plot(
+        cal5, lty = 1, lwd = 2,
+        errbar.col = color5,
+        par.corrected = list(col = color5), 
+        conf.int = T,
+        xlim = c(pos, 1), ylim = c(pos, 1), 
+        riskdist = F, col = "red", add = T)
 
     legend(
         "bottomright", 
-        legend = c(paste0(CUT1 / 12, '-year DFS: p = ', p3), paste0(CUT2 / 12, '-year DFS: p = ', p5)), 
+        legend = c(
+            paste0(CUT1 / 12, '-year DFS: p = ', p3), 
+            paste0(CUT2 / 12, '-year DFS: p = ', p5)), 
         col = c('blue', 'red'), 
         lwd = 2, cex = 1.5, lty = c(1, 1))
     sink()
