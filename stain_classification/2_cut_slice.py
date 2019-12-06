@@ -23,8 +23,8 @@ def cut(path, filename, savepath):
         xmin = xmax + 10
 
 def main():
-    path = "/home/tongxueqing/data/zhaox/stain_classification/normed/"
-    savepath = "/home/tongxueqing/data/zhaox/stain_classification/cutted/"
+    path = "/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/normed/"
+    savepath = "/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced/"
     for filename in os.listdir(path):
         cut(path, filename, savepath)
 

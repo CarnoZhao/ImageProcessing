@@ -99,3 +99,13 @@ if __name__ == "__main__":
     # axs[0].imshow(result_img)
     # axs[1].imshow(original_img)
     # plt.savefig("/home/tongxueqing/zhao/ImageProcessing/stain_classification/output.png")
+    import h5py
+    import re
+    files = os.listdir("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced")
+    h = h5py.File("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced.h5", 'w')
+    h.create_dataset('name', data = [f.split('_')[0].encode() for f in files])
+    h.create_dataset('type', data = [re.findall(re.compile(r'(tumor|jizhi)'), f)[0].encode() for f in files])
+    h.create_dataset('data', shape = (len(files), 3, 512, 512))
+    for i, f in enumerate(files):
+        img = cv2.imread(os.path.join("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced", f))[:, :, ::-1].transpose((2, 0, 1)) / 255
+        h['data'][i, :, :, :] = img
