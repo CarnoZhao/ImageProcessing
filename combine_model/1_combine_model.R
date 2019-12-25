@@ -10,6 +10,7 @@ if (T) {
             library(ggplot2)
             library(pheatmap)
             library(survMisc)
+            library(xlsx)
         })
         if (dir.exists("/wangshuo")) {
             root = "/wangshuo/zhaox"
@@ -21,12 +22,10 @@ if (T) {
     source(file.path(root, "ImageProcessing/combine_model/functions.R"))
 
     preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
-    info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/clinicinfo.csv"), stringsAsFactors = F, row.names = 1)
-    info[,c("N.cut.N3b", "total.cut.IVA")] = NULL
-    info$N.read = ifelse(info$N.read %in% c(0, 1), 0, 1)
-    info$T.read = ifelse(info$T.read %in% c(1, 2), 0, 1)
-    info$total.cut = ifelse(info$total.cut %in% c(1, 2, 3), 0, 1)
-    # info$age = ifelse(info$age < 50, 0, 1)
+    info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/ClinicMessageForAnalysis.csv"), stringsAsFactors = F, row.names = 1)
+
+    info$number = NULL
+    info$name = rownames(info)
     for (col in colnames(info)) {
         preds[,col] = info[match(preds$name, rownames(info)),col]
     }
@@ -41,13 +40,13 @@ if (T) {
     test = preds[preds$set == 1,]
     train = train_val[!train_val$name %in% k_fold[,2],]
     val = train_val[train_val$name %in% k_fold[,2],]
-    val = rbind(test, val)
+    # val = rbind(test, val)
     options(datadist = 'data.dist')
 }
 
 # single significant clinic feature
 if (T) {
-    all.clis = colnames(info)[!colnames(info) %in% c("EVB", "name", "set", "time", "event")]
+    all.clis = colnames(info)[!colnames(info) %in% c("EVB", "name", "set") & !grepl("(time|event)", colnames(info))]
     ps = sapply(all.clis, function(col) {
         time = train$time
         event = train$event
@@ -56,10 +55,6 @@ if (T) {
     })
     clis = names(ps)[ps < 0.05]
     clis = clis[clis != "T.read"]
-    # cli.cox = coxph(as.formula(paste0("Surv(time, event) ~ ", paste(clis, collapse = " + "))), data = train)
-    remove.cli = all.clis[!all.clis %in% clis]
-    train[,remove.cli] = NULL
-    val[,remove.cli] = NULL
 }
 
 if (T) {  
@@ -91,6 +86,7 @@ if (T) {
         # add new signature
         train[,name] = to_pred(train, cox)$pred
         val[,name] = to_pred(val, cox)$pred
+        test[,name] = to_pred(test, cox)$pred
     }
     names(models) = names(features.list)
     result[order(rowMeans(result[,1:2])),]
@@ -99,7 +95,7 @@ if (T) {
     if (T) {        
         summary.cis = lapply(names(features.list), function(name) {
             cox = models[[match(name, names(features.list))]]
-            d = list('train' = train, 'val' = val)
+            d = list('train' = train, 'val' = val, 'test' = test)
             summs = sapply(d, function(data) {
                 ci = to_raw_ci(data, cox)
                 sapply(ci[c('c.index', "lower", 'upper', 'p.value')], signif, digits = 3)
@@ -107,12 +103,12 @@ if (T) {
             summs = as.data.frame(summs)
             summs$X = rownames(summs)
             summs$name = name
-            summs = summs[,c(4, 3, 1, 2)]
+            summs = summs[,c(5, 4, 1, 2, 3)]
         })
         names(summary.cis) = names(features.list)
         summary.cis = do.call(rbind, summary.cis)
         rownames(summary.cis) = NULL
-        write.csv(summary.cis, "/home/tongxueqing/zhao/ImageProcessing/combine_model/_outs/summary.cis.csv")
+        write.csv(summary.cis, "/home/tongxueqing/zhao/ImageProcessing/combine_model/_outs/summary.cis.csv", quote = F, row.names = F)
     }
 
     # model compare: cindex.comp
@@ -125,6 +121,7 @@ if (T) {
         })
         # comp = ifelse(comp < 0.05, comp, NA)
         train.sig = signif(comp, 3)
+        train.sig
         tmp = val
         comp = sapply(models, function(cox1) {
             sapply(models, function(cox2) {
@@ -133,27 +130,94 @@ if (T) {
         })
         # comp = ifelse(comp < 0.05, comp, NA)
         val.sig = signif(comp, 3)
+        val.sig
+        tmp = test
+        comp = sapply(models, function(cox1) {
+            sapply(models, function(cox2) {
+                cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
+            })
+        })
+        # comp = ifelse(comp < 0.05, comp, NA)
+        test.sig = signif(comp, 3)
+        test.sig
     }
 
 
+    bind = rbind(val, test)
+    is.bind = T
+    # bind = test
     # plots
     dd.features = colnames(train)[!grepl("(EVB|set)", colnames(train))]
+    # for (name in c("deep_mr_cli")) {
     for (name in names(features.list)) {   
         pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/', name, '.pdf')), width = 16, height = 8) 
-        par(mfrow = c(1, 2))
+        if (is.bind) {
+            par(mfrow = c(1, 2))
+        } else {
+            par(mfrow = c(1, 3))
+        }
 
         # risk plot
         cutoff = cut_off(train, name)
         risk_plot(train, cutoff, name)
-        risk_plot(val, cutoff, name)
+        if (is.bind) {
+            risk_plot(bind, cutoff, name)
+        } else {
+            risk_plot(val, cutoff, name)
+            risk_plot(test, cutoff, name)
+        }
+
+        risk_plot(train, cutoff, name, x = "death")
+        if (is.bind) {
+            risk_plot(bind, cutoff, name, x = "death")
+        } else {
+            risk_plot(val, cutoff, name, x = "death")
+            risk_plot(test, cutoff, name, x = "death")
+        }
+
+        risk_plot(train, cutoff, name, x = "trans")
+        if (is.bind) {
+            risk_plot(bind, cutoff, name, x = "trans")
+        } else {
+            risk_plot(val, cutoff, name, x = "trans")
+            risk_plot(test, cutoff, name, x = "trans")
+        }
+
+        risk_plot(train, cutoff, name, x = "re")
+        if (is.bind) {
+            risk_plot(bind, cutoff, name, x = "re")
+        } else {
+            risk_plot(val, cutoff, name, x = "re")
+            risk_plot(test, cutoff, name, x = "re")
+        }
 
         cutby = "gender"; cutby.names = c("male", "female")
         risk_plot_strat(train, cutoff, name, info, cutby, cutby.names)
-        risk_plot_strat(val, cutoff, name, info, cutby, cutby.names)
+        if (is.bind) {
+            risk_plot_strat(bind, cutoff, name, info, cutby, cutby.names)
+        } else {
+            risk_plot_strat(val, cutoff, name, info, cutby, cutby.names)
+            risk_plot_strat(test, cutoff, name, info, cutby, cutby.names)
+        }
+
+        cutby = "T.read"; cutby.names = c("0,1", "2,3")
+        risk_plot_strat(train, cutoff, name, info, cutby, cutby.names)
+        if (is.bind) {
+            risk_plot_strat(bind, cutoff, name, info, cutby, cutby.names)
+        } else {
+            risk_plot_strat(val, cutoff, name, info, cutby, cutby.names)
+            risk_plot_strat(test, cutoff, name, info, cutby, cutby.names)
+        }
+
 
         # survival ROC
         roc_plot(train, name)
-        roc_plot(val, name)
+        if (is.bind) {
+            roc_plot(bind, name)
+        } else {
+            roc_plot(val, name)
+            roc_plot(test, name)
+        }
 
         # nomogram
         data.dist = datadist(train[,dd.features])
@@ -164,8 +228,15 @@ if (T) {
         par(mfrow = c(1, 2), lwd = 2, pch = 20)
         data.dist = datadist(train[,dd.features])
         calibration_plot(train, name, features.list, npoints = 3)
-        data.dist = datadist(val[,dd.features])
-        calibration_plot(val, name, features.list, npoints = 3)
+        if (is.bind) {
+            data.dist = datadist(bind[,dd.features])
+            calibration_plot(bind, name, features.list, npoints = 3)
+        } else {
+            data.dist = datadist(val[,dd.features])
+            calibration_plot(val, name, features.list, npoints = 3)
+            data.dist = datadist(test[,dd.features])
+            calibration_plot(test, name, features.list, npoints = 3)
+        }
         par(opar)
 
         dev.off()
@@ -181,10 +252,12 @@ if (T) {
         })
         names(evb.features.list) = paste0("evb_", names(features.list))
         evb.features.list = c(evb.features.list, features.list, "evb" = "EVB")
-        EVB.median = mean(as.numeric(ifelse(na.omit(train_val$EVB) == "<500", "0", na.omit(train_val$EVB))))
+        # EVB.median = median(as.numeric(ifelse(na.omit(train_val$EVB) == "<500", "0", na.omit(train_val$EVB))))
         evb.data = train_val[complete.cases(train_val$EVB),]
-        evb.data$EVB = ifelse(evb.data$EVB == "<500", "0", evb.data$EVB)
-        evb.data$EVB = ifelse(as.numeric(evb.data$EVB) < EVB.median, 0, 1)
+        # evb.data$EVB = as.numeric(ifelse(evb.data$EVB == "<500", "0", evb.data$EVB))
+        # cutoff = cut_off(evb.data, "EVB")
+        cutoff = 4000
+        evb.data$EVB = ifelse(as.numeric(evb.data$EVB) < cutoff, 0, 1)
         
         evb.result = matrix(rep(0, length(evb.features.list) * 2), c(length(evb.features.list), 2))
         row.names(evb.result) = names(evb.features.list)
@@ -195,29 +268,11 @@ if (T) {
 
     for (name in names(evb.features.list)) {
         features = evb.features.list[[name]]
-        # evb.models = lapply(1:3, function(k) {
-        #     train = evb.data[!evb.data$name %in% evb.fold[,k],]
-        #     val = evb.data[evb.data$name %in% evb.fold[,k],]
-        #     res = make_sig(train, features)
-        #     cox = res$model
-        # })
-        # k_fold = as.matrix(k_fold)
+
         res = make_sig(evb.data, features)
         cox = res$model
         evb.models[[length(evb.models) + 1]] = cox
 
-
-        # ci
-        # citr = mean(sapply(1:3, function(k) {
-        #     tr = evb.data[!evb.data$name %in% evb.fold[,k],]
-        #     model = evb.models[[k]]
-        #     to_ci(tr, model)
-        # }))
-        # civl = mean(na.omit(sapply(1:3, function(k) {
-        #     vl = evb.data[evb.data$name %in% evb.fold[,k],]
-        #     model = evb.models[[k]]
-        #     to_ci(vl, model)
-        # })))
         citr = to_ci(evb.data, cox)
         evb.result[match(name, names(evb.features.list)),] = c(citr, NA)
         
@@ -226,6 +281,22 @@ if (T) {
     }
     names(evb.models) = names(evb.features.list)
     evb.result[order(evb.result[,1]),]
+
+    summary.cis.evb = lapply(names(evb.features.list), function(name) {
+        cox = evb.models[[match(name, names(evb.features.list))]]
+        d = list('ebv.data' = evb.data)
+        summs = sapply(d, function(data) {
+            ci = to_raw_ci(data, cox)
+            sapply(ci[c('c.index', "lower", 'upper', 'p.value')], signif, digits = 3)
+        })
+        summs = as.data.frame(summs)
+        summs$X = rownames(summs)
+        summs$name = name
+        summs = summs[,c(3, 2, 1)]
+    })
+    names(summary.cis.evb) = names(evb.features.list)
+    summary.cis.evb = do.call(rbind, summary.cis.evb)
+    write.csv(summary.cis.evb, "/home/tongxueqing/zhao/ImageProcessing/combine_model/_outs/summary.cis.evb.csv", quote = F, row.names = F)
 
     # c-index comparison
     if (T) {        
@@ -236,7 +307,7 @@ if (T) {
             cox1 = evb.models[[name]]
             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
         })
-        signif(comp, 3)
+        comp
     }
 }
 

@@ -8,7 +8,7 @@ suppressPackageStartupMessages({
     library(survminer)
 })
 CUT1 = 36
-CUT2 = 60
+
 
 to_pred = function(data, cox) {
     features = names(cox$coefficients)
@@ -55,10 +55,18 @@ cut_off = function(data, name) {
     round(cox.2$z1[1], digits = 3)
 }
 
-risk_plot = function(data, cutoff, name) {
-    stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
-    if (all(data$set == 0)) {set = 'train'}
-    else {set = 'test'}
+risk_plot = function(data, cutoff, name, x = NULL) {
+    if (is.null(x)) {
+        time.name = "time"
+        event.name = "event"
+    } else {
+        time.name = paste0(x, '.time')
+        event.name = paste0(x, '.event')
+    }
+    stra.df = data.frame("time" = data[,time.name], "event" = data[,event.name], "stra" = ifelse(data[,name] < cutoff, 0, 1))
+    if (all(data$set == 0)) {set = 'train'
+    } else {set = 'internal and external validation'}
+    if (!is.null(x)) { set = paste0(set, '-', x) }
     km.coxph.plot(
         formula.s = Surv(time, event) ~ stra, 
         data.s = stra.df, leg.inset = 0.02,
@@ -69,7 +77,7 @@ risk_plot = function(data, cutoff, name) {
         leg.pos = "bottomright",
         show.n.risk = TRUE,
         n.risk.step = 12, n.risk.cex = 1, 
-        mark.time = T,  v.line = c(CUT1, CUT2),
+        mark.time = T,  v.line = CUT1,
         main.title = set, verbose = F)
 }
 
@@ -85,7 +93,7 @@ risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {
     names(ps) = unique(stra.df$stra)
     if (all(data$set == 0)) {
         set = 'train'
-    } else {set = 'test'}
+    } else {set = 'internal and external validation'}
     km.coxph.plot(
         formula.s = Surv(time, event) ~ stra.cut, 
         data.s = stra.df, leg.inset = 0.02,
@@ -96,14 +104,17 @@ risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {
             rep(c("Low", "High"), each = 2), 
             "risk",
             rep(cutby.names, 2),
-            rep(c("", " P =")),
-            c("", ps[1], "", ps[2]), sep = " "),
+            # rep(c("", " P =")),
+            # c("", ps[1], "", ps[2]), 
+            sep = " "),
         leg.pos = "bottomleft", leg.bty = "n",
         show.n.risk = F,
         o.text = "",
-        mark.time = T,  v.line = c(CUT1, CUT2),
-        main.title = set, verbose = F)
+        mark.time = T,  v.line = CUT1,
+        main.title = paste0(set, '-', cutby), verbose = F)
 }
+
+hazard.ratio(data$deep_mr_cli, data$time, data$event, strat = stra.df$stra)
 
 # png("/home/tongxueqing/zhao/ImageProcessing/combine_model/_plots/test.png")
 # risk_plot_strat(rbind(val, test), cutoff, name, info, cutby, cutby.names)
@@ -115,7 +126,7 @@ rowMax = function(df) {
 
 roc_plot = function(data, name) {
     if (all(data$set == 0)) {set = 'train'}
-    else {set = 'test'}
+    else {set = 'internal and external validation'}
     n = length(data[,name])
     t1 = survivalROC(
         Stime = data$time, 
@@ -123,15 +134,9 @@ roc_plot = function(data, name) {
         data[,name], 
         predict.time = CUT1, 
         span = 0.001 * n ^ (-0.2))
-    t2 = survivalROC(
-        Stime = data$time, 
-        status = data$event, 
-        data[,name], 
-        predict.time = CUT2, 
-        span = 0.001 * n ^ (-0.2))
     plot(
         t1$FP, 
-        t2$TP, 
+        t1$TP, 
         type = "l",
         xlim = c(0, 1),
         ylim = c(0, 1),
@@ -143,17 +148,12 @@ roc_plot = function(data, name) {
         main = set)
     legend(
         "bottomright",
-        legend = c(
-            paste0(CUT1 / 12, '-year: AUC = ', round(t1$AUC, 3)), 
-            paste0(CUT2 / 12, '-year: AUC = ', round(t2$AUC, 3))),
-        col = c(
-            rgb(254 / 255, 67 / 255, 101 / 255),
-            rgb(0, 0, 0)),
+        legend = paste0(CUT1 / 12, '-year: AUC = ', round(t1$AUC, 3)),
+        col = c(rgb(254 / 255, 67 / 255, 101 / 255)),
         lwd = 2,
         cex = 1.5,
         lty = c(1, 1))
     lines(c(0, 1), c(0, 1), lty = 6, col = rgb(113 / 255, 150 / 255, 159 / 255), lwd = 2.0)
-    lines(t2$FP, t2$TP, lty = 1, lwd = 2, col = rgb(0, 0, 0))    
 }
 
 nomo_plot = function(data, name, features.list) {
@@ -171,9 +171,8 @@ nomo_plot = function(data, name, features.list) {
     nom = nomogram(
         f, 
         fun = list(
-            function(x) surv.prob(CUT1, x),
-            function(x) surv.prob(CUT2, x)),
-        funlabel = c(paste0(CUT1 / 12, "-year DFS rate"), paste0(CUT2 / 12, "-year DFS rate")),
+            function(x) surv.prob(CUT1, x)),
+        funlabel = c(paste0(CUT1 / 12, "-year DFS rate")),
         fun.at = 10:0 / 10,
         lp = F)
     plot(nom, xfrac = 0.3, cex.axis = 1.3, cex.var = 1.3)
@@ -193,7 +192,7 @@ HLtest = function(cal){
 
 calibration_plot = function(data, name, features.list, npoints = 3) {
     if (all(data$set == 0)) {set = 'train'}
-    else {set = 'test'}
+    else {set = 'internal and external validation'}
     features = features.list[[name]]
     pos = 0
     sink("/dev/null")
@@ -217,29 +216,10 @@ calibration_plot = function(data, name, features.list, npoints = 3) {
         xlab="Nomogram-Predicted Probability DFS",
         ylab="Observed Actual DFS (Proportion)", main = set)
 
-    f5 = cph(
-        as.formula(
-        paste0("Surv(time, event) ~ ", #name)),
-        paste(features, collapse = " + "))),
-        surv = T, x = T, y = T, data = data, time.inc = CUT2)
-    cal5 = calibrate(
-        f5, u = CUT2, cmethod = "KM", method = "boot",
-        B = 30, m = floor(nrow(data) / npoints), surv = T)
-    p5 = round(HLtest(cal5), 3)
-    color5 = c(rgb(209, 73, 85, maxColorValue = 255))
-    plot(
-        cal5, lty = 1, lwd = 2,
-        errbar.col = color5,
-        par.corrected = list(col = color5), 
-        conf.int = T,
-        xlim = c(pos, 1), ylim = c(pos, 1), 
-        riskdist = F, col = "red", add = T)
-
     legend(
         "bottomright", 
         legend = c(
-            paste0(CUT1 / 12, '-year DFS: p = ', p3), 
-            paste0(CUT2 / 12, '-year DFS: p = ', p5)), 
+            paste0(CUT1 / 12, '-year DFS: p = ', p3)), 
         col = c('blue', 'red'), 
         lwd = 2, cex = 1.5, lty = c(1, 1))
     sink()
