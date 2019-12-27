@@ -109,3 +109,22 @@ if __name__ == "__main__":
     for i, f in enumerate(files):
         img = cv2.imread(os.path.join("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced", f))[:, :, ::-1].transpose((2, 0, 1)) / 255
         h['data'][i, :, :, :] = img
+
+import cv2
+import os
+import numpy as np
+
+root = "/wangshuo/zhaox/ImageProcessing/gene_association/_data/"
+files = [os.path.join(root, "sliced", f) for f in os.listdir(os.path.join(root, "sliced"))]
+
+sumimg = np.zeros((len(files), 512, 512, 3))
+for i, f in enumerate(files):
+    img = cv2.imread(f) / 255
+    sumimg[i,:, :,:] = img
+mean = np.mean(sumimg, axis = 0)
+sd = np.std(sumimg, axis = 0)
+
+for i, f in enumerate(files):
+    img = cv2.imread(f) / 255
+    img = (img - mean) / sd
+    cv2.imwrite(f.replace("sliced", "self_normed"), np.uint8(img * 255))
