@@ -10,6 +10,7 @@ if (T) {
             library(ggplot2)
             library(pheatmap)
             library(survMisc)
+            library(xlsx)
         })
         if (dir.exists("/wangshuo")) {
             root = "/wangshuo/zhaox/"
@@ -133,6 +134,9 @@ if (T) {
     # }
 
 
+    bind = rbind(val, test)
+    is.bind = T
+    # bind = test
     # plots
     dd.features = do.call(c, features.list)
     name = "deep_mr_cli"
@@ -208,10 +212,12 @@ if (T) {
         })
         names(evb.features.list) = paste0("evb_", names(features.list))
         evb.features.list = c(evb.features.list, features.list, "evb" = "EVB")
-        EVB.median = mean(as.numeric(ifelse(na.omit(train_val$EVB) == "<500", "0", na.omit(train_val$EVB))))
+        # EVB.median = median(as.numeric(ifelse(na.omit(train_val$EVB) == "<500", "0", na.omit(train_val$EVB))))
         evb.data = train_val[complete.cases(train_val$EVB),]
-        evb.data$EVB = ifelse(evb.data$EVB == "<500", "0", evb.data$EVB)
-        evb.data$EVB = ifelse(as.numeric(evb.data$EVB) < EVB.median, 0, 1)
+        # evb.data$EVB = as.numeric(ifelse(evb.data$EVB == "<500", "0", evb.data$EVB))
+        # cutoff = cut_off(evb.data, "EVB")
+        cutoff = 4000
+        evb.data$EVB = ifelse(as.numeric(evb.data$EVB) < cutoff, 0, 1)
         
         evb.result = matrix(rep(0, length(evb.features.list) * 2), c(length(evb.features.list), 2))
         row.names(evb.result) = names(evb.features.list)
@@ -222,29 +228,11 @@ if (T) {
 
     for (name in names(evb.features.list)) {
         features = evb.features.list[[name]]
-        # evb.models = lapply(1:3, function(k) {
-        #     train = evb.data[!evb.data$name %in% evb.fold[,k],]
-        #     val = evb.data[evb.data$name %in% evb.fold[,k],]
-        #     res = make_sig(train, features)
-        #     cox = res$model
-        # })
-        # k_fold = as.matrix(k_fold)
+
         res = make_sig(evb.data, features)
         cox = res$model
         evb.models[[length(evb.models) + 1]] = cox
 
-
-        # ci
-        # citr = mean(sapply(1:3, function(k) {
-        #     tr = evb.data[!evb.data$name %in% evb.fold[,k],]
-        #     model = evb.models[[k]]
-        #     to_ci(tr, model)
-        # }))
-        # civl = mean(na.omit(sapply(1:3, function(k) {
-        #     vl = evb.data[evb.data$name %in% evb.fold[,k],]
-        #     model = evb.models[[k]]
-        #     to_ci(vl, model)
-        # })))
         citr = to_ci(evb.data, cox)
         evb.result[match(name, names(evb.features.list)),] = c(citr, NA)
         
@@ -253,6 +241,22 @@ if (T) {
     }
     names(evb.models) = names(evb.features.list)
     evb.result[order(evb.result[,1]),]
+
+    summary.cis.evb = lapply(names(evb.features.list), function(name) {
+        cox = evb.models[[match(name, names(evb.features.list))]]
+        d = list('ebv.data' = evb.data)
+        summs = sapply(d, function(data) {
+            ci = to_raw_ci(data, cox)
+            sapply(ci[c('c.index', "lower", 'upper', 'p.value')], signif, digits = 3)
+        })
+        summs = as.data.frame(summs)
+        summs$X = rownames(summs)
+        summs$name = name
+        summs = summs[,c(3, 2, 1)]
+    })
+    names(summary.cis.evb) = names(evb.features.list)
+    summary.cis.evb = do.call(rbind, summary.cis.evb)
+    write.csv(summary.cis.evb, "/home/tongxueqing/zhao/ImageProcessing/combine_model/_outs/summary.cis.evb.csv", quote = F, row.names = F)
 
     # c-index comparison
     if (T) {        
@@ -263,7 +267,7 @@ if (T) {
             cox1 = evb.models[[name]]
             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
         })
-        signif(comp, 3)
+        comp
     }
 }
 

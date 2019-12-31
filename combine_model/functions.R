@@ -206,7 +206,7 @@ HLtest = function(cal){
 
 calibration_plot = function(data, name, features.list, npoints = 3) {
     if (all(data$set == 0)) {set = 'train'}
-    else {set = 'test'}
+    else {set = 'internal and external validation'}
     features = features.list[[name]]
     pos = 0
     sink("/dev/null")
