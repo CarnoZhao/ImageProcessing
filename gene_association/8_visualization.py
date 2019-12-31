@@ -234,9 +234,7 @@ if __name__ == '__main__':
 	# Can work with any model, but it assumes that the model has a 
 	# feature method, and a classifier method,
 	# as in the VGG models in torchvision.
-	normedimg = os.popen("find /wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets/train/ -name *tif").read().strip().split('\n')
-	# normedimg = np.random.choice(normedimg, 1000)
-	rawimg = [os.path.join("/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/", *f.split('/')[-3:]) for f in normedimg]
+	normedimg = os.popen("find /wangshuo/zhaox/ImageProcessing/gene_association/_data/self_normed -name *tif").read().strip().split('\n')
 	net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/FINAL_SURV.model").module
 	net.eval()
 	mynet = torch.nn.Sequential(OrderedDict([
@@ -245,7 +243,7 @@ if __name__ == '__main__':
 		("classifier", net.postnet)
 	]))
 	mynet.eval()
-	root = "/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/CAM_out/"
+	root = "/wangshuo/zhaox/ImageProcessing/gene_association/_data/CAM_out/"
 
 	jdic = {"huaisi": 0, "jizhi": 1, "tumor": 2, "tumorln": 3}
 
@@ -265,21 +263,24 @@ if __name__ == '__main__':
 		mil_selected.append(imgp)
 		finalpreds.append(max(preds))
 
-	import pandas as pd
-	df = pd.read_csv("/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/merged.csv")
+	# import pandas as pd
+	# df = pd.read_csv("/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/merged.csv")
 	spreds = sorted(finalpreds)
 
 	for i in range(len(pats)):
 		try:
 			pat = pats[i]
 			imgp = mil_selected[i]
-			time = df['time'][list(df['number']).index(eval(pat))]
-			event = df['event'][list(df['number']).index(eval(pat))]
-			hosi = df['hosi'][list(df['number']).index(eval(pat))]
+			# time = df['time'][list(df['number']).index(eval(pat))]
+			# event = df['event'][list(df['number']).index(eval(pat))]
+			# hosi = df['hosi'][list(df['number']).index(eval(pat))]
+			event = -1
+			time = -1
+			hosi = "NA"
 			pred = finalpreds[i]
 		except:
 			continue
-		realp = imgp.replace("subsets", "augged")
+		realp = imgp.replace("self_normed", "sliced")
 		prefix = "(%d)%d_%.3f_%.3f_%s.png" %(spreds.index(pred) + 1, event, time, pred, pat)
 		savepath = os.path.join(root, prefix)
 		os.system("mkdir -p " + os.path.dirname(savepath))
@@ -289,17 +290,17 @@ if __name__ == '__main__':
 		ipt = preprocess_image(img)
 		real = cv2.imread(realp, 1)
 		real = np.float32(cv2.resize(real, (512, 512))) / 255
-		tp = os.path.basename(os.path.dirname(imgp))
+		tp = os.path.basename(imgp).split("_")[1]
 		mask = grad_cam(ipt)
 		heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
 		heatmap = np.float32(heatmap) / 255
 		cam = heatmap + np.float32(real)
 		cam = cam / np.max(cam)
-		cam = np.concatenate((cam, real), axis = 1)
-		# imgs = np.concatenate((img, real), axis = 1)
-		# cam = np.concatenate((imgs, cam), axis = 0)
-		cam = np.concatenate((cam, np.ones((512, 512, 3))), axis = 1)
+		cam = np.concatenate((cam, heatmap), axis = 1)
+		imgs = np.concatenate((img, real), axis = 1)
+		cam = np.concatenate((imgs, cam), axis = 0)
+		cam = np.concatenate((cam, np.ones((1024, 512, 3))), axis = 1)
 		text = "signature:\n%.6f\ntime:\n%.3f\nevent:\n%d\nhospital:\n%s\npatient number:\n%s\nuse image type:\n%s" %(pred, time, event, hosi, pat, tp)
 		for j, t in enumerate(text.split('\n')):
-			cam = cv2.putText(cam, t, (1034, 40 + j * 40), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 1.2, color = (255, 0, 0), thickness = 2)
+			cam = cv2.putText(cam, t, (1034, 256 + j * 40), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 1.2, color = (255, 0, 0), thickness = 2)
 		cv2.imwrite(savepath, np.uint8(cam * 255))
