@@ -8,7 +8,6 @@ suppressPackageStartupMessages({
     library(survminer)
 })
 CUT1 = 36
-CUT2 = 60
 
 to_pred = function(data, cox) {
     features = names(cox$coefficients)
@@ -55,10 +54,22 @@ cut_off = function(data, name) {
     round(cox.2$z1[1], digits = 3)
 }
 
-risk_plot = function(data, cutoff, name) {
-    stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
-    if (all(data$set == 0)) {set = 'train'}
+risk_plot = function(data, cutoff, name, x = NULL, main = NULL) {
+    if (all(data$set == 0) & all(!is.na(data$set))) {set = 'train'}
     else {set = 'test'}
+    if (is.null(main)) {
+        set = set
+    } else {
+        set = main
+    }
+    if (is.null(x)) {
+        timename = "time"
+        eventname = "event"
+    } else {
+        timename = paste(x, "time", sep = ".")
+        eventname = paste(x, "event", sep = ".")
+    }
+    stra.df = data.frame("time" = data[,timename], "event" = data[,eventname], "stra" = ifelse(data[,name] < cutoff, 0, 1))
     km.coxph.plot(
         formula.s = Surv(time, event) ~ stra, 
         data.s = stra.df, leg.inset = 0.02,
@@ -69,41 +80,49 @@ risk_plot = function(data, cutoff, name) {
         leg.pos = "bottomright",
         show.n.risk = TRUE,
         n.risk.step = 12, n.risk.cex = 1, 
-        mark.time = T,  v.line = c(CUT1, CUT2),
+        mark.time = T,  v.line = c(CUT1),
         main.title = set, verbose = F)
 }
 
-risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {
-    stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
-    stra.df$cutby = info[match(data$name, info$name), cutby]
-    stra.df$stra.cut = paste(stra.df$stra, stra.df$cutby, sep = ".")
-    ps = sapply(unique(stra.df$stra), function(s) {
-        tmp = stra.df[stra.df$stra == s,]
-        p = summary(coxph(Surv(time, event) ~ cutby, data = tmp))$sctest["pvalue"]
-        signif(p, 3)
-    })
-    names(ps) = unique(stra.df$stra)
-    if (all(data$set == 0)) {
-        set = 'train'
-    } else {set = 'test'}
-    km.coxph.plot(
-        formula.s = Surv(time, event) ~ stra.cut, 
-        data.s = stra.df, leg.inset = 0.02,
-        .lwd = c(2,2), .col = rep(c('black','red'), each = 2), .lty = rep(c(1, 2), 2),
-        x.label = "Time (months)",
-        y.label = "Probability of Survival",
-        leg.text = paste(
-            rep(c("Low", "High"), each = 2), 
-            "risk",
-            rep(cutby.names, 2),
-            rep(c("", " P =")),
-            c("", ps[1], "", ps[2]), sep = " "),
-        leg.pos = "bottomleft", leg.bty = "n",
-        show.n.risk = F,
-        o.text = "",
-        mark.time = T,  v.line = c(CUT1, CUT2),
-        main.title = set, verbose = F)
+if (F) {
+    data = train
+    data = val
+    data = test
+    data$stra = ifelse(data$deep_mr_cli < cutoff, 0, 1)
+    hazard.ratio(data$deep_mr_cli, surv.time = data$time, surv.event = data$event, strat = data$stra)
 }
+
+# risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {
+#     stra.df = data.frame("time" = data$time, "event" = data$event, "stra" = ifelse(data[,name] < cutoff, 0, 1))
+#     stra.df$cutby = info[match(data$name, info$name), cutby]
+#     stra.df$stra.cut = paste(stra.df$stra, stra.df$cutby, sep = ".")
+#     ps = sapply(unique(stra.df$stra), function(s) {
+#         tmp = stra.df[stra.df$stra == s,]
+#         p = summary(coxph(Surv(time, event) ~ cutby, data = tmp))$sctest["pvalue"]
+#         signif(p, 3)
+#     })
+#     names(ps) = unique(stra.df$stra)
+#     if (all(data$set == 0)) {
+#         set = 'train'
+#     } else {set = 'test'}
+#     km.coxph.plot(
+#         formula.s = Surv(time, event) ~ stra.cut, 
+#         data.s = stra.df, leg.inset = 0.02,
+#         .lwd = c(2,2), .col = rep(c('black','red'), each = 2), .lty = rep(c(1, 2), 2),
+#         x.label = "Time (months)",
+#         y.label = "Probability of Survival",
+#         leg.text = paste(
+#             rep(c("Low", "High"), each = 2), 
+#             "risk",
+#             rep(cutby.names, 2),
+#             rep(c("", " P =")),
+#             c("", ps[1], "", ps[2]), sep = " "),
+#         leg.pos = "bottomleft", leg.bty = "n",
+#         show.n.risk = F,
+#         o.text = "",
+#         mark.time = T,  v.line = c(CUT1),
+#         main.title = set, verbose = F)
+# }
 
 # png("/home/tongxueqing/zhao/ImageProcessing/combine_model/_plots/test.png")
 # risk_plot_strat(rbind(val, test), cutoff, name, info, cutby, cutby.names)
@@ -113,47 +132,43 @@ rowMax = function(df) {
     apply(as.matrix(df), 1, max)
 }
 
-roc_plot = function(data, name) {
+roc_plot = function(data, name, main = NULL) {
+    names = c("cli", "mr", "deep", "deep_mr_cli")
     if (all(data$set == 0)) {set = 'train'}
     else {set = 'test'}
-    n = length(data[,name])
-    t1 = survivalROC(
-        Stime = data$time, 
-        status = data$event, 
-        data[,name], 
-        predict.time = CUT1, 
-        span = 0.001 * n ^ (-0.2))
-    t2 = survivalROC(
-        Stime = data$time, 
-        status = data$event, 
-        data[,name], 
-        predict.time = CUT2, 
-        span = 0.001 * n ^ (-0.2))
+    ts = lapply(names, function(name) {
+        n = length(data[,name])
+        t = survivalROC(
+            Stime = data$time, 
+            status = data$event, 
+            data[,name], 
+            predict.time = CUT1, 
+            span = 0.001 * n ^ (-0.2))
+    })
+    t1 = ts[[1]]
     plot(
         t1$FP, 
-        t2$TP, 
+        t1$TP, 
         type = "l",
         xlim = c(0, 1),
         ylim = c(0, 1),
         xlab = "False Positive Rate (%)",
         ylab = "True Positive Rate (%)",
-        col = rgb(254 / 255, 67 / 255, 101 / 255),
+        col = "blue",
         lwd = 2,
         cex.lab = 1.5,
         main = set)
     legend(
         "bottomright",
-        legend = c(
-            paste0(CUT1 / 12, '-year: AUC = ', round(t1$AUC, 3)), 
-            paste0(CUT2 / 12, '-year: AUC = ', round(t2$AUC, 3))),
-        col = c(
-            rgb(254 / 255, 67 / 255, 101 / 255),
-            rgb(0, 0, 0)),
+        legend = paste0(names, " ", CUT1 / 12, '-year: AUC = ', round(sapply(ts, function(t)t$AUC), 3)),
+        col = c("blue", "black", "green", "red"),
         lwd = 2,
         cex = 1.5,
         lty = c(1, 1))
     lines(c(0, 1), c(0, 1), lty = 6, col = rgb(113 / 255, 150 / 255, 159 / 255), lwd = 2.0)
-    lines(t2$FP, t2$TP, lty = 1, lwd = 2, col = rgb(0, 0, 0))    
+    lines(ts[[2]]$FP, ts[[2]]$TP, lty = 1, lwd = 2, col = "black")    
+    lines(ts[[3]]$FP, ts[[3]]$TP, lty = 1, lwd = 2, col = "green")    
+    lines(ts[[4]]$FP, ts[[4]]$TP, lty = 1, lwd = 2, col = "red")    
 }
 
 nomo_plot = function(data, name, features.list) {
@@ -170,10 +185,8 @@ nomo_plot = function(data, name, features.list) {
     surv.prob = Survival(f)
     nom = nomogram(
         f, 
-        fun = list(
-            function(x) surv.prob(CUT1, x),
-            function(x) surv.prob(CUT2, x)),
-        funlabel = c(paste0(CUT1 / 12, "-year DFS rate"), paste0(CUT2 / 12, "-year DFS rate")),
+        fun = list(function(x) surv.prob(CUT1, x)),
+        funlabel = c(paste0(CUT1 / 12, "-year DFS rate")),
         fun.at = 10:0 / 10,
         lp = F)
     plot(nom, xfrac = 0.3, cex.axis = 1.3, cex.var = 1.3)
@@ -213,34 +226,14 @@ calibration_plot = function(data, name, features.list, npoints = 3) {
         par.corrected = list(col = color3), 
         conf.int = T, 
         xlim = c(pos, 1), ylim = c(pos, 1), 
-        riskdist = F, col = "blue", axes = T,
+        riskdist = F, col = "red", axes = T,
         xlab="Nomogram-Predicted Probability DFS",
         ylab="Observed Actual DFS (Proportion)", main = set)
 
-    f5 = cph(
-        as.formula(
-        paste0("Surv(time, event) ~ ", #name)),
-        paste(features, collapse = " + "))),
-        surv = T, x = T, y = T, data = data, time.inc = CUT2)
-    cal5 = calibrate(
-        f5, u = CUT2, cmethod = "KM", method = "boot",
-        B = 30, m = floor(nrow(data) / npoints), surv = T)
-    p5 = round(HLtest(cal5), 3)
-    color5 = c(rgb(209, 73, 85, maxColorValue = 255))
-    plot(
-        cal5, lty = 1, lwd = 2,
-        errbar.col = color5,
-        par.corrected = list(col = color5), 
-        conf.int = T,
-        xlim = c(pos, 1), ylim = c(pos, 1), 
-        riskdist = F, col = "red", add = T)
-
     legend(
         "bottomright", 
-        legend = c(
-            paste0(CUT1 / 12, '-year DFS: p = ', p3), 
-            paste0(CUT2 / 12, '-year DFS: p = ', p5)), 
-        col = c('blue', 'red'), 
+        legend = c(paste0(CUT1 / 12, '-year DFS: p = ', p3)), 
+        col = c('red'), 
         lwd = 2, cex = 1.5, lty = c(1, 1))
     sink()
 }

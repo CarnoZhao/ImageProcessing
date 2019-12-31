@@ -12,47 +12,44 @@ if (T) {
             library(survMisc)
         })
         if (dir.exists("/wangshuo")) {
-            root = "/wangshuo/zhaox"
+            root = "/wangshuo/zhaox/"
         } else {
-            root = "/home/tongxueqing/zhao"
+            root = "/home/tongxueqing/zhao/"
         }
         set.seed(0)
     }
     source(file.path(root, "ImageProcessing/combine_model/functions.R"))
 
     preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
-    info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/clinicinfo.csv"), stringsAsFactors = F, row.names = 1)
-    info[,c("N.cut.N3b", "total.cut.IVA")] = NULL
-    info$N.read = ifelse(info$N.read %in% c(0, 1), 0, 1)
-    info$T.read = ifelse(info$T.read %in% c(1, 2), 0, 1)
-    info$total.cut = ifelse(info$total.cut %in% c(1, 2, 3), 0, 1)
-    # info$age = ifelse(info$age < 50, 0, 1)
+    info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/ClinicMessageForAnalysis.csv"), stringsAsFactors = F, row.names = 1)
+
+    info$age = ifelse(info$age < 52, 0, 1)
     for (col in colnames(info)) {
-        preds[,col] = info[match(preds$name, rownames(info)),col]
+        preds[,col] = info[match(preds$name, as.numeric(rownames(info))),col]
     }
     mrs = colnames(preds)[grepl("mr_serie", colnames(preds))]
-    # preds$sig_mr = apply(as.matrix(preds[,grepl('mr_serie', colnames(preds))]), 1, mean)
-    # preds$sig_cli = apply(as.matrix(preds[,grepl('cli_fold', colnames(preds))]), 1, mean)
     preds = preds[complete.cases(preds$sig_deep),]
 
-    k_fold = read.csv("/home/tongxueqing/zhao/ImageProcessing/combine_model/_data/k_fold_name.csv", row.names = 1)
+    k_fold = read.csv(paste0(root, "ImageProcessing/combine_model/_data/k_fold_name.csv"), row.names = 1)
 
     train_val = preds[preds$set == 0,]
     test = preds[preds$set == 1,]
     train = train_val[!train_val$name %in% k_fold[,2],]
     val = train_val[train_val$name %in% k_fold[,2],]
-    val = rbind(test, val)
+    # val = rbind(test, val)
     options(datadist = 'data.dist')
 }
 
 # single significant clinic feature
-if (T) {
+if (F) {
     all.clis = colnames(info)[!colnames(info) %in% c("EVB", "name", "set", "time", "event")]
     ps = sapply(all.clis, function(col) {
-        time = train$time
-        event = train$event
-        cox = coxph(Surv(time, event) ~ train[,col],)
+        subtrain = train[complete.cases(train[,col]),]
+        time = subtrain$time
+        event = subtrain$event
+        cox = coxph(Surv(time, event) ~ subtrain[,col],)
         summary(cox)$coefficients[,"Pr(>|z|)"]
+        hazard.ratio(subtrain[,col], surv.time = time, surv.event = event)[1:6]
     })
     clis = names(ps)[ps < 0.05]
     clis = clis[clis != "T.read"]
@@ -60,6 +57,8 @@ if (T) {
     remove.cli = all.clis[!all.clis %in% clis]
     train[,remove.cli] = NULL
     val[,remove.cli] = NULL
+} else {
+    clis = c("age", "N.read", "lymphocyte")
 }
 
 if (T) {  
@@ -67,10 +66,9 @@ if (T) {
         "deep" = "sig_deep",
         "mr" = "sig_mr",
         "cli" = clis,
-        # "sigcli" = "sig_cli",
         "deep_mr" = c("sig_deep", "sig_mr"),
-        "deep_mr_cli" = c("sig_deep", "sig_mr", clis)
-        # "deep_mr_sigcli" = c("sig_deep", "sig_mr", "sig_cli")
+        "deep_mr_cli" = c("sig_deep", "sig_mr", clis),
+        "doctor" = c("necrosis", "lymphocyte")
     )
     result = matrix(rep(0, length(features.list) * 2), c(length(features.list), 2))
     row.names(result) = names(features.list)
@@ -82,15 +80,12 @@ if (T) {
         cox = res$model
         ci = res$ci
         models[[length(models) + 1]] = cox
-
-        # ci
         citr = to_ci(train, cox)
         civl = to_ci(val, cox)
         result[match(name, names(features.list)),] = c(citr, civl)
-        
-        # add new signature
         train[,name] = to_pred(train, cox)$pred
         val[,name] = to_pred(val, cox)$pred
+        test[,name] = to_pred(test, cox)$pred
     }
     names(models) = names(features.list)
     result[order(rowMeans(result[,1:2])),]
@@ -99,76 +94,108 @@ if (T) {
     if (T) {        
         summary.cis = lapply(names(features.list), function(name) {
             cox = models[[match(name, names(features.list))]]
-            d = list('train' = train, 'val' = val)
+            d = list('train' = train, 'val' = val, "test" = test)
             summs = sapply(d, function(data) {
                 ci = to_raw_ci(data, cox)
-                sapply(ci[c('c.index', "lower", 'upper', 'p.value')], signif, digits = 3)
+                x = sapply(ci[c('c.index', "lower", 'upper', 'p.value')], signif, digits = 3)
+                paste(x[1], " (", x[2], "-", x[3], "),", x[4], sep = "")
             })
-            summs = as.data.frame(summs)
-            summs$X = rownames(summs)
-            summs$name = name
-            summs = summs[,c(4, 3, 1, 2)]
+            paste(summs, collapse = ",")
+            # summs = as.data.frame(summs)
+            # summs$X = rownames(summs)
+            # summs$name = name
+            # summs = summs[,c(3, 2, 1)]
         })
         names(summary.cis) = names(features.list)
         summary.cis = do.call(rbind, summary.cis)
         rownames(summary.cis) = NULL
-        write.csv(summary.cis, "/home/tongxueqing/zhao/ImageProcessing/combine_model/_outs/summary.cis.csv")
+        write.csv(summary.cis, paste0(root, "ImageProcessing/combine_model/_outs/summary.cis.csv"), quote = F)
     }
 
     # model compare: cindex.comp
-    if (T) {    
-        tmp = train
-        comp = sapply(models, function(cox1) {
-            sapply(models, function(cox2) {
-                cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
-            })
-        })
-        # comp = ifelse(comp < 0.05, comp, NA)
-        train.sig = signif(comp, 3)
-        tmp = val
-        comp = sapply(models, function(cox1) {
-            sapply(models, function(cox2) {
-                cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
-            })
-        })
-        # comp = ifelse(comp < 0.05, comp, NA)
-        val.sig = signif(comp, 3)
-    }
+    # if (T) {    
+    #     tmp = train
+    #     comp = sapply(models, function(cox1) {
+    #         sapply(models, function(cox2) {
+    #             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
+    #         })
+    #     })
+    #     # comp = ifelse(comp < 0.05, comp, NA)
+    #     train.sig = signif(comp, 3)
+    #     tmp = val
+    #     comp = sapply(models, function(cox1) {
+    #         sapply(models, function(cox2) {
+    #             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
+    #         })
+    #     })
+    #     # comp = ifelse(comp < 0.05, comp, NA)
+    #     val.sig = signif(comp, 3)
+    # }
 
 
     # plots
-    dd.features = colnames(train)[!grepl("(EVB|set)", colnames(train))]
-    for (name in names(features.list)) {   
-        pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/', name, '.pdf')), width = 16, height = 8) 
-        par(mfrow = c(1, 2))
+    dd.features = do.call(c, features.list)
+    name = "deep_mr_cli"
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/risk.pdf')), width = 24, height = 8) 
+    par(mfrow = c(1, 3))
+    cutoff = cut_off(train, name)
+    risk_plot(train, cutoff, name)
+    risk_plot(val, cutoff, name)
+    risk_plot(test, cutoff, name)
+    dev.off()
 
-        # risk plot
-        cutoff = cut_off(train, name)
-        risk_plot(train, cutoff, name)
-        risk_plot(val, cutoff, name)
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/strat.pdf')), width = 16, height = 30) 
+    par(mfrow = c(6, 2))
+    all = rbind(train, val, test)
+    risk_plot(all[all$gender == 1,], cutoff, name, main = "Male")
+    risk_plot(all[all$gender == 2,], cutoff, name, main = "Female")
+    risk_plot(all[all$T.read == 0,], cutoff, name, main = "T-stage: I-II")
+    risk_plot(all[all$T.read == 1,], cutoff, name, main = "T-stage: III-IV")
+    risk_plot(all[all$smoke == 0,], cutoff, name, main = "no smoke")
+    risk_plot(all[all$smoke == 1,], cutoff, name, main = "smoke")
+    risk_plot(all[all$HB == 0,], cutoff, name, main = "HB low")
+    risk_plot(all[all$HB == 1,], cutoff, name, main = "HB high")
+    risk_plot(all[all$total.cut == 0,], cutoff, name, main = "total.cut I-III")
+    risk_plot(all[all$total.cut == 1,], cutoff, name, main = "total.cut IV")
+    risk_plot(all[all$family == 0,], cutoff, name, main = "no family")
+    risk_plot(all[all$family == 1,], cutoff, name, main = "family")
+    # risk_plot(all[all$smoke == 0,], cutoff, name, main = "Smoke")
+    # risk_plot(all[all$smoke == 1,], cutoff, name, main = "No smoke")
+    dev.off()
 
-        cutby = "gender"; cutby.names = c("male", "female")
-        risk_plot_strat(train, cutoff, name, info, cutby, cutby.names)
-        risk_plot_strat(val, cutoff, name, info, cutby, cutby.names)
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/second.pdf')), width = 24, height = 8) 
+    par(mfrow = c(1, 3))
+    all = rbind(train, val, test)
+    risk_plot(all, cutoff, name, x = "death", main = "All data Death")
+    risk_plot(all, cutoff, name, x = "trans", main = "All data Trans")
+    risk_plot(all, cutoff, name, x = "re", main = "All data Re")
+    dev.off()
 
-        # survival ROC
-        roc_plot(train, name)
-        roc_plot(val, name)
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/ROC.pdf')), width = 24, height = 8)
+    par(mfrow = c(1, 3))
+    roc_plot(train, name)
+    roc_plot(val, name)
+    roc_plot(test, name)
+    dev.off()
 
         # nomogram
-        data.dist = datadist(train[,dd.features])
-        nomo_plot(train, name, features.list)
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/nomo.pdf')), width = 16, height = 8)
+    data.dist = datadist(train[,dd.features])
+    nomo_plot(train, name, features.list)
+    dev.off()
 
         # calibration 
-        opar = par(no.readonly = T)
-        par(mfrow = c(1, 2), lwd = 2, pch = 20)
-        data.dist = datadist(train[,dd.features])
-        calibration_plot(train, name, features.list, npoints = 3)
-        data.dist = datadist(val[,dd.features])
-        calibration_plot(val, name, features.list, npoints = 3)
-        par(opar)
-
-        dev.off()
+    pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/calibration.pdf')), width = 24, height = 8)
+    opar = par(no.readonly = T)
+    par(mfrow = c(1, 3), lwd = 2, pch = 20)
+    data.dist = datadist(train[,dd.features])
+    calibration_plot(train, name, features.list, npoints = 3)
+    data.dist = datadist(val[,dd.features])
+    calibration_plot(val, name, features.list, npoints = 3)
+    data.dist = datadist(test[,dd.features])
+    calibration_plot(test, name, features.list, npoints = 3)
+    par(opar)
+    dev.off()
     }
 }
 

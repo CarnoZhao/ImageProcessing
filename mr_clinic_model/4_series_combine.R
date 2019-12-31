@@ -25,7 +25,7 @@ data$event = labeldata$event[match(data$name, labeldata$name)]
 to_ci = function(set, cox = cox.new) {
     pred = predict(cox, newdata = set, type = "lp")
     ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")    
-    ci$c.index
+    paste(round(ci$c.index, 3), " (", round(ci$lower, 3), "-", round(ci$upper, 3), ") ", signif(ci$p.value, 3), sep = "")
 }
 
 combine_pred = function(set, models = L) {
@@ -182,13 +182,13 @@ for(w in 1:n / n) {
         model
     })
     citr = combine_pred(trainAll, L)
-    civl = combine_pred(rbind(trainAll, valAll), L)
+    civl = combine_pred(valAll, L)
     cits = combine_pred(test, L)
     result[w * n,] = c(w, citr, civl, cits)
     Ls[[w * n]] = L
 }
 result
-saveRDS(Ls, "/home/tongxueqing/zhao/ImageProcessing/mr_clinic_model/_data/Ls_mr.rds")
+saveRDS(Ls, file.path(root, "ImageProcessing/mr_clinic_model/_data/Ls_mr.rds"))
 
 Ls = readRDS(file.path(root, "ImageProcessing/mr_clinic_model/_data/Ls_mr.rds"))
 result = t(sapply(1:n / n, function(w) {
@@ -218,7 +218,17 @@ newpreds = sapply(1:3, function(s) {
 
 cname = paste("mr_serie", 1:3, sep = '')
 preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
-preds[,grepl("mr_serie", colnames(preds))] = NULL
+preds[,grepl("(mr|cli)_fold", colnames(preds))] = NULL
 # preds[,cname] = newpreds[match(data$name, preds$name),]
 preds[,"sig_mr"] = apply(newpreds, 1, max)
+preds$set = ifelse(preds$name %in% test$name, 1, 0)
 write.csv(preds, file.path(root, "ImageProcessing/combine_model/_data/preds.csv"))
+
+
+### 
+m1 = coxph(Surv(time, event) ~ log.sigma.4.0.mm.3D_glszm_GrayLevelNonUniformity + original_shape_Flatness + wavelet.LH_glcm_ClusterShade, data = trainAll[trainAll$series == 1,])
+m2 = coxph(Surv(time, event) ~ original_shape_Flatness + log.sigma.2.0.mm.3D_gldm_DependenceNonUniformityNormalized + wavelet.LL_gldm_DependenceNonUniformity + log.sigma.2.0.mm.3D_glrlm_RunLengthNonUniformityNormalized
+, data = trainAll[trainAll$series == 2,])
+m3 = coxph(Surv(time, event) ~ original_shape_Flatness + original_shape_Maximum2DDiameterColumn+ original_shape_Maximum2DDiameterRow + original_shape_SurfaceVolumeRatio + original_glszm_SizeZoneNonUniformity
+, data = trainAll[trainAll$series == 3,])
+L = list(m1, m2, m3)
