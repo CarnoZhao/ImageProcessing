@@ -1,7 +1,11 @@
 library(pheatmap)
 library(ComplexHeatmap)
 
-gene = read.csv("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/gene.csv", stringsAsFactors = F, row.names = 1)
+if (dir.exists("/wangshuo/zhaox/ImageProcessing")) {
+    root = "/wangshuo/zhaox/ImageProcessing"
+}
+
+gene = read.csv(file.path(root, "gene_association/_data/gene.csv"), stringsAsFactors = F, row.names = 1)
 nfkb = c("CYLD", "NFKBIA")
 pik = c("MAP2K1", "MAPK8IP1", "MTOR", "PIK3C2G", "FGF19", "FGF3", "FGF4", "FGFR3", "PIK3CA", "TEK", "HGF", "IRS2", "HSP90AA1", "VEGFA", "SH2B3")
 remdl = c("ARID1A", "KMT2C", "KMT2D", "KDM5C", "KDM6A", "DNMT3A") 
@@ -14,7 +18,7 @@ gene = cbind(gene[,!colnames(gene) %in% gs], sapply(grps, function(clst) {
 }))
 colSums(gene[,names(grps)])
 
-mr = read.csv("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/mr.merged.csv")
+mr = read.csv(file.path(root, "gene_association/_data/mr.merged.csv"))
 
 have = list(
     'T1' = c(
@@ -37,7 +41,7 @@ have = list(
     )
 )
 
-dp.sig = read.csv("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP.sig.csv")
+dp.sig = read.csv(file.path(root, "gene_association/_data/DP.sig.csv"))
 
 main = function(p) {
     features = lapply(names(grps), function(grp) {
@@ -87,11 +91,20 @@ pss = lapply(names(have), function(seq) {
     })
 })
 pss = do.call(rbind, pss)
+pss = rbind(pss, sapply(names(grps), function(grp) {
+    notID = gene$ID[gene[,grp] == 0]
+    yesID = gene$ID[gene[,grp] == 1]
+    submr = dp.sig
+    submryes = submr[submr$name %in% yesID,]
+    submrnot = submr[submr$name %in% notID,]
 
-pheatmap(-log10(pss), filename = "/home/tongxueqing/zhao/ImageProcessing/gene_association/_plots/p.values.png", treeheight_row = 0, treeheight_col = 0, width = 10, height = 6, main = "-log10(p)")
+    p.values = t.test(x = submryes$dp_sig, y = submrnot$dp_sig)$p.value
+})); tmp = rownames(pss); tmp[13] = "Pathomics_signature"; rownames(pss) = tmp
 
-library(ggplot2)
-png("/home/tongxueqing/zhao/ImageProcessing/gene_association/_plots/p.values.comp.png", width = 1000, height = 600)
+#pheatmap(-log10(pss), filename = file.path(root, "gene_association/_plots/p.values.pdf"), treeheight_row = 0, treeheight_col = 0, width = 10, height = 6, main = "-log10(p)")
+
+#library(ggplot2)
+pdf(file.path(root, "gene_association/_plots/p.values.comp.pdf"), width = 10, height = 6)
 Heatmap(
     -log10(pss), 
     cell_fun = function(i, j, x, y, width, height, fill) {
@@ -104,6 +117,7 @@ Heatmap(
     show_heatmap_legend = F,
     show_column_dend = F,
     show_row_dend = F,
-    column_title_rot = 0
+    column_title_rot = 0,
+    col = c("#619CFF", "#FFFF55", "#F8766D")
 )
 dev.off()

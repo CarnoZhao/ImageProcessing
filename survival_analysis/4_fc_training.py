@@ -66,42 +66,38 @@ class SurvDataset(torch.utils.data.Dataset):
         return self.length
       
 class Data(object):
-    def __init__(self, h5path, fold = 4, k = 0):
+    def __init__(self, h5path):
         h5 = h5py.File(h5path, 'r')
+        self.pats = h5['pats'][:]
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
-        self.postdata = h5['postdata%d' % k][:]
+        self.postdata = h5['postdata'][:]
         self.names = ['train', 'val', 'test']
-        self.fold = fold
-        self.k = k
 
     def __datasets_creater(self):
         train_val = np.arange(len(self.set_pat))[self.set_pat == 0]
-        inf = int(self.k * len(train_val) / self.fold)
-        sup = int((self.k + 1) * len(train_val) / self.fold)
-        validx = np.arange(len(train_val))
-        validx = np.bitwise_and(np.greater_equal(validx, inf), np.less(validx, sup))
-        train = train_val[np.bitwise_not(validx)]
-        val = train_val[validx]
+        train_val_name = self.pats[self.set_pat == 0]
+        train_name = [int(x.strip().split()[1]) for x in open("/wangshuo/zhaox/ImageProcessing/combine_model/_data/new_set.txt")]
+        train = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] in train_name])
+        val = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] not in train_name])
         test = np.arange(len(self.set_pat))[self.set_pat == 1]
         datasets = {}
         datasets['train'] = SurvDataset(train, self.label)
         datasets['val'] = SurvDataset(val, self.label)
         datasets['test'] = SurvDataset(test, self.label)
-        self.k += 1
         return datasets
 
-    def load(self, batch_size, ratio = [0.8, 0.1, 0.1]):
+    def load(self, batch_size):
         datasets = self.__datasets_creater()
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train', drop_last = name == 'train') for name in self.names}
         mapdic = {i: np.arange(len(self.pat_fig[i]))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
         return loaders, mapdic, self.data, self.postdata
 
 class Train(object):
-    def __init__(self, savedmodel = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True, fold = 4, k = 0):
+    def __init__(self, savedmodel = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True):
         self.savedmodel = savedmodel
         self.layer = layer
         self.p = p
@@ -111,7 +107,7 @@ class Train(object):
         self.net = self.__load_net()
         self.loss = SurvLoss()
         self.h5path = h5path
-        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path, fold).load(batch_size, k)
+        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path).load(batch_size)
         self.lr = lr
         self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
@@ -121,7 +117,6 @@ class Train(object):
         self.lrstep = lrstep
         self.cbstep = cbstep
         self.ifprint = ifprint
-        self.fold = fold
 
     def __get_opt(self):
         if self.mission == "Surv":
@@ -174,7 +169,7 @@ class Train(object):
 
     def __call_back(self, i, ifprint = True):
         if i % self.cbstep != 0:
-            return
+            return 
         out = "%d" % i
         cis = {}
         for name, loader in self.loaders.items():
@@ -186,13 +181,21 @@ class Train(object):
                 Yhat[i:i + len(y)] = self.__get_instance(pats, False)
                 i += len(y)
             ci = concordance_index(np.abs(Y), -Yhat, np.where(Y > 0, 1, 0))
+            if name == "train":
+                Yhatstop = Yhat[:round(0.5 * len(Yhat))]
+                Ystop = Y[:round(0.5 * len(Y))]
+                cistop = concordance_index(np.abs(Ystop), -Yhatstop, np.where(Ystop > 0, 1, 0))
+                cis["stop"] = cistop
             out += " | %s: %.3f" % (name, ci)
             cis[name] = ci
-        if ifprint:
+        if ifprint and i % self.cbstep == 0:
             print_to_out(out)
         return cis
 
     def train(self):
+        stop = 0; maxci = 0
+        i = 0
+        # while stop <= 10:
         for i in range(self.epochs):
             for pats, y in self.loaders['train']:
                 x = self.__get_instance(pats, True)
@@ -204,24 +207,22 @@ class Train(object):
                 cost.backward()
                 self.opt.step()
             cis = self.__call_back(i, self.ifprint)
+            # if cis['stop'] > maxci:
+            #     stop = 0
+            #     maxci = cis["stop"]
+            # else:
+            #     stop += 1
             self.__lr_step(i)
+            # i += 1
         torch.save(self.net, modelpath)
-        return cis
-
-    def k_fold_train(self):
-        D = Data(self.h5path, self.fold)
-        for k in range(self.fold):
-            self.loaders, self.mapdic, _, self.postdata = D.load(self.batch_size)
-            self.net = self.__load_net()
-            self.opt = self.__get_opt()
-            cis = self.train(modelpath.replace("Nov", "%d.%d.Nov" % (iii, k)))
+        return i, cis
 
 
 
 if __name__ == "__main__":
-    global modelpath; global plotpath; global matpath; global outfile
-    modelpath, plotpath, matpath, outfile = sys.argv[1:5]
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    global modelpath, plotpath, outfile
+    modelpath, plotpath, outfile = sys.argv[1:4]
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     params = {
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "lr": 7e-5,
@@ -235,13 +236,10 @@ if __name__ == "__main__":
         "optim": "SGD",
         "weight_decay": 1e-3,
         "mission": "Surv", # Surv, ClassSurv, FullTrain1FC, FullTrain2FC
-        "ifprint": False,
-        "fold": 4,
-        "k": 3,
+        "ifprint": False
     }
     # for key, value in params.items():
     #     print_to_out(key, ":", value)
-    print_to_out("in fold %d" % params['k'])
     cis = {'train': 0, 'val': 0, 'test': 0}
     global iii
     iii = 0
@@ -256,7 +254,7 @@ if __name__ == "__main__":
         params['epochs'] = np.random.randint(20, 80)
         params['optim'] = np.random.choice(['SGD', 'Ada'], 1)[0]
         params['cbstep'] = params['epochs'] - 1
-        cis = Train(**params).train()
+        ep, cis = Train(**params).train()
         out = "lr: %.3e | ep: %d | lrd: %.3e | l: %d | p: %.3f | wtd: %.3e | op: %s | citr: %.4f | civl: %.4f | cits: %.4f" % (
             params['lr'], params['epochs'], params['lr_decay'], params['layer'], params['p'], params['weight_decay'], params['optim'], 
             cis['train'], cis['val'], cis['test']

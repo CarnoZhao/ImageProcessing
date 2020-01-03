@@ -29,8 +29,8 @@ class Data(object):
         if not os.path.exists(h5path):
             self.__make_h5(h5path, figpath, infopath)
         h5 = h5py.File(h5path, 'a')
-        # self.__make_post(h5)
-        self.__make_pred(h5)
+        self.__make_post(h5)
+        # self.__make_pred(h5)
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
