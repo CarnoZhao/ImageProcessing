@@ -67,16 +67,15 @@ class SurvDataset(torch.utils.data.Dataset):
         return self.length
       
 class Data(object):
-    def __init__(self, h5path, fold = 4, k = 0, ifcombine = False):
+    def __init__(self, h5path, ifcombine = False):
         h5 = h5py.File(h5path, 'r')
+        self.pats = h5["pats"][:]
         self.set_pat = h5['set_pat'][:]
         self.pat_fig = h5['pat_fig'][:]
         self.tps = h5['tps'][:]
         self.label = h5['label'][:]
         self.data = h5['data']
         self.postdata = h5['postdata'][:]
-        self.fold = fold
-        self.k = k
         self.ifcombine = ifcombine
 
     def __datasets_creater(self):
@@ -87,39 +86,36 @@ class Data(object):
             datasets['train'] = SurvDataset(train_val, self.label)
             datasets['test'] = SurvDataset(test, self.label)
         else:
-            inf = int(self.k * len(train_val) / self.fold)
-            sup = int((self.k + 1) * len(train_val) / self.fold)
-            validx = np.arange(len(train_val))
-            validx = np.bitwise_and(np.greater_equal(validx, inf), np.less(validx, sup))
-            train = train_val[np.bitwise_not(validx)]
-            val = train_val[validx]
+            train_val = np.arange(len(self.set_pat))[self.set_pat == 0]
+            train_val_name = self.pats[self.set_pat == 0]
+            train_name = [int(x.strip().split()[1]) for x in open(os.path.join(root, "ImageProcessing/combine_model/_data/new_set.txt"))]
+            train = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] in train_name])
+            val = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] not in train_name])
+            test = np.arange(len(self.set_pat))[self.set_pat == 1]
             datasets['train'] = SurvDataset(train, self.label)
             datasets['val'] = SurvDataset(val, self.label)
             datasets['test'] = SurvDataset(test, self.label)
-            self.k += 1
         return datasets
 
-    def load(self, batch_size, k = None):
-        if k is not None: self.k = k
+    def load(self, batch_size):
         datasets = self.__datasets_creater()
         loaders = {name: DataLoader(datasets[name], batch_size = batch_size if name == 'train' else 1, shuffle = name == 'train', drop_last = name == 'train') for name in datasets}
         mapdic = {i: np.arange(len(self.pat_fig[i]))[self.pat_fig[i]] for i in range(len(self.pat_fig))}
         return loaders, mapdic, self.data, self.postdata
 
 class Train(object):
-    def __init__(self, savedmodel, savedmodel2 = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True, fold = 4, k = 0, ifcombine = False):
+    def __init__(self, savedmodel, savedmodel2 = None, h5path = None, infopath = None, lr = 1e-4, lr2 = None, batch_size = 64, epochs = 20, layer = 100, p = 0, weight_decay1 = 5e-4, weight_decay2 = 5e-4, optim = "SGD", lr_decay = -1, gpus = [0], lrstep = 100, cbstep = 10, figpath = None, mission = 'Surv', ifprint = True, ifcombine = False):
         self.savedmodel = savedmodel
         self.savedmodel2 = savedmodel2
         self.layer = layer
         self.p = p
-        self.weight_decay = weight_decay
+        self.weight_decay1 = weight_decay1
+        self.weight_decay2 = weight_decay2
         self.gpus = gpus
         self.mission = mission
-        self.fold = fold
-        self.k = k
         self.net = self.__load_net()
         self.loss = SurvLoss()
-        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path, self.fold, self.k, ifcombine).load(batch_size)
+        self.loaders, self.mapdic, self.data, self.postdata = Data(h5path, ifcombine).load(batch_size)
         self.lr = lr
         self.lr2 = lr2 if lr != None else lr
         self.lr_decay = lr_decay
@@ -134,17 +130,17 @@ class Train(object):
         if self.mission == 'ClassSurv':
             if self.optim == "Ada":
                 return torch.optim.Adamax([
-                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay},
-                    {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay1},
+                    {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay2},
                 ])
             elif self.optim == "SGD":
                 return torch.optim.SGD([
-                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay},
-                    {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay},
+                    {'params': self.net.module.prenet.parameters(), 'lr': self.lr, "weight_decay": self.weight_decay1},
+                    {"params": self.net.module.postnet.parameters(), 'lr': self.lr2, "weight_decay": self.weight_decay2},
                 ], momentum = 0.9, nesterov = True)
             elif self.optim == "mix":
-                opt1 = torch.optim.Adamax(self.net.module.prenet.parameters(), self.lr, weight_decay = self.weight_decay)
-                opt2 = torch.optim.SGD(self.net.module.postnet.parameters(), lr = self.lr2, weight_decay = self.weight_decay, momentum = 0.9, nesterov = True)
+                opt1 = torch.optim.Adamax(self.net.module.prenet.parameters(), self.lr, weight_decay = self.weight_decay1)
+                opt2 = torch.optim.SGD(self.net.module.postnet.parameters(), lr = self.lr2, weight_decay = self.weight_decay2, momentum = 0.9, nesterov = True)
                 return opt1, opt2
         else:
             raise NotImplementedError("Not supported mission")
@@ -233,27 +229,26 @@ class Train(object):
         return cis
 
 if __name__ == "__main__":
-    global modelpath; global plotpath; global matpath; global outfile
-    modelpath, plotpath, matpath, outfile = sys.argv[1:5]
+    global modelpath, plotpath, outfile
+    modelpath, plotpath, outfile = sys.argv[1:4]
     os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
     params = {
-        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/2.Nov.05_09:31.model"),
-        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/287.05_20:40.model"),
+        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/fold2.resnet.model"),
+        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Jan.04_09:12.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-        "lr": 8e-8, # for resnet part
-        "lr2": 8e-8, # for fc part
+        "lr": 2e-7, # for resnet part
+        "lr2": 4e-8, # for fc part
         "batch_size": 32,
         "epochs": 100,
         "gpus": [0, 1],
         "cbstep": 1,
         "lr_decay": 5.6e-6,
-        "optim": "Ada",
-        "weight_decay": 1e-2,
+        "optim": "SGD",
+        "weight_decay1": 1e-2,
+        "weight_decay2": 0.85,
         "mission": "ClassSurv",
         "ifprint": True,
-        "fold": 4,
-        "k": 2,
-        "ifcombine": True
+        "ifcombine": False
     }
     for key, value in params.items():
         print_to_out(key, ":", value)
