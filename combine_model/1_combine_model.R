@@ -10,7 +10,7 @@ if (T) {
             library(ggplot2)
             library(pheatmap)
             library(survMisc)
-            library(xlsx)
+            # library(xlsx)
         })
         if (dir.exists("/wangshuo")) {
             root = "/wangshuo/zhaox/"
@@ -24,40 +24,41 @@ if (T) {
     preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
     info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/ClinicMessageForAnalysis.csv"), stringsAsFactors = F, row.names = 1)
 
-    info$age = ifelse(info$age < 52, 0, 1)
+    # info$age = ifelse(info$age < 52, 0, 1)
     for (col in colnames(info)) {
         preds[,col] = info[match(preds$name, as.numeric(rownames(info))),col]
     }
     mrs = colnames(preds)[grepl("mr_serie", colnames(preds))]
     preds = preds[complete.cases(preds$sig_deep),]
 
-    k_fold = read.csv(paste0(root, "ImageProcessing/combine_model/_data/k_fold_name.csv"), row.names = 1)
+    # k_fold = read.csv(paste0(root, "ImageProcessing/combine_model/_data/k_fold_name.csv"), row.names = 1)
+    pat_set = read.table(file.path(root, "ImageProcessing/combine_model/_data/new_set.txt"))$V1
 
     train_val = preds[preds$set == 0,]
     test = preds[preds$set == 1,]
-    train = train_val[!train_val$name %in% k_fold[,2],]
-    val = train_val[train_val$name %in% k_fold[,2],]
+    train = train_val[train_val$name %in% pat_set,]
+    val = train_val[!train_val$name %in% pat_set,]
     # val = rbind(test, val)
     options(datadist = 'data.dist')
 }
 
 # single significant clinic feature
-if (F) {
-    all.clis = colnames(info)[!colnames(info) %in% c("EVB", "name", "set", "time", "event")]
+if (T) {
+    all.clis = colnames(info)[!grepl("(EVB|name|number|set|time|event)", colnames(info))]
     ps = sapply(all.clis, function(col) {
         subtrain = train[complete.cases(train[,col]),]
         time = subtrain$time
         event = subtrain$event
-        cox = coxph(Surv(time, event) ~ subtrain[,col],)
-        summary(cox)$coefficients[,"Pr(>|z|)"]
-        hazard.ratio(subtrain[,col], surv.time = time, surv.event = event)[1:6]
+        # cox = coxph(Surv(time, event) ~ subtrain[,col],)
+        # summary(cox)$coefficients[,"Pr(>|z|)"]
+        hazard.ratio(subtrain[,col], surv.time = time, surv.event = event)$p.value
     })
-    clis = names(ps)[ps < 0.05]
-    clis = clis[clis != "T.read"]
+    clis = names(ps)[ps < 0.05 & !is.na(ps)]
+    # clis = clis[clis != "T.read"]
     # cli.cox = coxph(as.formula(paste0("Surv(time, event) ~ ", paste(clis, collapse = " + "))), data = train)
-    remove.cli = all.clis[!all.clis %in% clis]
-    train[,remove.cli] = NULL
-    val[,remove.cli] = NULL
+    # remove.cli = all.clis[!all.clis %in% clis]
+    # train[,remove.cli] = NULL
+    # val[,remove.cli] = NULL
 } else {
     clis = c("age", "N.read", "lymphocyte")
 }
@@ -71,9 +72,9 @@ if (T) {
         "deep_mr_cli" = c("sig_deep", "sig_mr", clis),
         "doctor" = c("necrosis", "lymphocyte")
     )
-    result = matrix(rep(0, length(features.list) * 2), c(length(features.list), 2))
+    result = matrix(rep(0, length(features.list) * 3), c(length(features.list), 3))
     row.names(result) = names(features.list)
-    colnames(result) = c("citr", "civl")
+    colnames(result) = c("citr", "civl", "cits")
     models = list()
     for (name in names(features.list)) {
         features = features.list[[name]]
@@ -83,7 +84,8 @@ if (T) {
         models[[length(models) + 1]] = cox
         citr = to_ci(train, cox)
         civl = to_ci(val, cox)
-        result[match(name, names(features.list)),] = c(citr, civl)
+        cits = to_ci(test, cox)
+        result[match(name, names(features.list)),] = c(citr, civl, cits)
         train[,name] = to_pred(train, cox)$pred
         val[,name] = to_pred(val, cox)$pred
         test[,name] = to_pred(test, cox)$pred
