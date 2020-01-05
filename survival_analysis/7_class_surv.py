@@ -154,9 +154,15 @@ class Train(object):
 
     def __load_net(self):
         if self.mission == "ClassSurv":
-            prenet = torch.load(self.savedmodel).module
+            try:
+                prenet = torch.load(self.savedmodel).module
+            except:
+                prenet = torch.load(self.savedmodel)
             prenet.fc = torch.nn.Identity()
-            postnet = torch.load(self.savedmodel2).module
+            try:
+                postnet = torch.load(self.savedmodel2).module
+            except:
+                postnet = torch.load(self.savedmodel2)
             net = torch.nn.Sequential(OrderedDict([
                 ('prenet', prenet),
                 ('postnet', postnet)
@@ -233,8 +239,8 @@ if __name__ == "__main__":
     modelpath, plotpath, outfile = sys.argv[1:4]
     os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
     params = {
-        "savedmodel": os.path.join(root, "ImageProcessing/stain_classification/_models/fold2.resnet.model"),
-        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Jan.04_09:12.model"),
+        "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/FINAL_PRENET.model"),
+        "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/FINAL_POSTNET.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
         "lr": 2e-7, # for resnet part
         "lr2": 4e-8, # for fc part
