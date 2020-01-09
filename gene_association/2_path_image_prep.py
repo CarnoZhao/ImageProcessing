@@ -85,29 +85,29 @@ def manual_cut(filename):
     return original_img[xmin + 10:xmax - 10, ymin + 10:ymax - 10]
 
 if __name__ == "__main__":
-    input_dir = "/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/"
-    l = [f for f in os.listdir(input_dir) if "tif" in f]
-    for filename in l:
-        result_img, original_img =adj_img(input_dir + filename)
-        if result_img.shape[0] < 1000 or result_img.shape[1] < 1000 or filename == "1508175_tumor_ln_GX.tif":
-            result_img = manual_cut(input_dir + filename)
-            cv2.imwrite(input_dir + "cutted." + filename, result_img)
-        else:
-            cv2.imwrite(input_dir + "cutted." + filename, result_img)
-        print(filename, result_img.shape)
+    # input_dir = "/wangshuo/zhaox/ImageProcessing/gene_association/_data/DP/"
+    # l = [f for f in os.listdir(input_dir) if "tif" in f]
+    # for filename in l:
+    #     result_img, original_img =adj_img(input_dir + filename)
+    #     if result_img.shape[0] < 1000 or result_img.shape[1] < 1000 or filename == "1508175_tumor_ln_GX.tif":
+    #         result_img = manual_cut(input_dir + filename)
+    #         cv2.imwrite(input_dir + "cutted." + filename, result_img)
+    #     else:
+    #         cv2.imwrite(input_dir + "cutted." + filename, result_img)
+    #     print(filename, result_img.shape)
     # fig, axs = plt.subplots(2)
     # axs[0].imshow(result_img)
     # axs[1].imshow(original_img)
-    # plt.savefig("/home/tongxueqing/zhao/ImageProcessing/stain_classification/output.png")
+    # plt.savefig("/wangshuo/zhaox/ImageProcessing/stain_classification/output.png")
     import h5py
     import re
-    files = os.listdir("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced")
-    h = h5py.File("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced.h5", 'w')
+    files = os.listdir("/wangshuo/zhaox/ImageProcessing/gene_association/_data/self_normed")
+    h = h5py.File("/wangshuo/zhaox/ImageProcessing/gene_association/_data/self_normed.h5", 'w')
     h.create_dataset('name', data = [f.split('_')[0].encode() for f in files])
     h.create_dataset('type', data = [re.findall(re.compile(r'(tumor|jizhi)'), f)[0].encode() for f in files])
     h.create_dataset('data', shape = (len(files), 3, 512, 512))
     for i, f in enumerate(files):
-        img = cv2.imread(os.path.join("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP/sliced", f))[:, :, ::-1].transpose((2, 0, 1)) / 255
+        img = cv2.imread(os.path.join("/wangshuo/zhaox/ImageProcessing/gene_association/_data/self_normed", f))[:, :, ::-1].transpose((2, 0, 1)) / 255
         h['data'][i, :, :, :] = img
 
 import cv2

@@ -24,7 +24,7 @@ if (T) {
     preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
     info = read.csv(file.path(root, "ImageProcessing/combine_model/_data/ClinicMessageForAnalysis.csv"), stringsAsFactors = F, row.names = 1)
 
-    # info$age = ifelse(info$age < 52, 0, 1)
+    info$age = ifelse(info$age < 52, 0, 1)
     for (col in colnames(info)) {
         preds[,col] = info[match(preds$name, as.numeric(rownames(info))),col]
     }
@@ -32,7 +32,7 @@ if (T) {
     preds = preds[complete.cases(preds$sig_deep),]
 
     # k_fold = read.csv(paste0(root, "ImageProcessing/combine_model/_data/k_fold_name.csv"), row.names = 1)
-    pat_set = read.table(file.path(root, "ImageProcessing/combine_model/_data/new_set.txt"))$V1
+    pat_set = read.table(file.path(root, "ImageProcessing/combine_model/_data/newsets/18/newset.txt"))$V1
 
     train_val = preds[preds$set == 0,]
     test = preds[preds$set == 1,]
@@ -45,17 +45,21 @@ if (T) {
 # single significant clinic feature
 if (T) {
     all.clis = colnames(info)[!grepl("(EVB|name|number|set|time|event)", colnames(info))]
+    my.clis = c("age", "gender", "T.read", "N.read", "total.cut", "smoke", "family", "HB", "lymphocyte", "sarcoma", "necrosis", "lympho_crosis", "neck", "LDH", "EVB")
     ps = sapply(all.clis, function(col) {
         subtrain = train[complete.cases(train[,col]),]
         time = subtrain$time
         event = subtrain$event
-        # cox = coxph(Surv(time, event) ~ subtrain[,col],)
-        # summary(cox)$coefficients[,"Pr(>|z|)"]
-        hazard.ratio(subtrain[,col], surv.time = time, surv.event = event)$p.value
+        hr = hazard.ratio(subtrain[,col], surv.time = time, surv.event = event)
+        cat(paste0(round(hr$hazard.ratio,2), "(", round(hr$lower,2), '-', round(hr$upper,2), ") ", signif(hr$p.value,2), "\n"))
+        p = hr$p.value
     })
     clis = names(ps)[ps < 0.05 & !is.na(ps)]
     # clis = clis[clis != "T.read"]
-    # cli.cox = coxph(as.formula(paste0("Surv(time, event) ~ ", paste(clis, collapse = " + "))), data = train)
+    clis = clis[clis != "lympho_crosis"]
+    cli.cox = coxph(as.formula(paste0("Surv(time, event) ~ ", paste(clis, collapse = " + "))), data = train)
+    cox = step(cli.cox, directions = "both")
+    clis = names(cox$coefficients)
     # remove.cli = all.clis[!all.clis %in% clis]
     # train[,remove.cli] = NULL
     # val[,remove.cli] = NULL
@@ -91,7 +95,7 @@ if (T) {
         test[,name] = to_pred(test, cox)$pred
     }
     names(models) = names(features.list)
-    result[order(rowMeans(result[,1:2])),]
+    result[order(result[,1]),]
 
     # c-index confidence interval and p-value
     if (T) {        
@@ -116,28 +120,25 @@ if (T) {
     }
 
     # model compare: cindex.comp
-    # if (T) {    
-    #     tmp = train
-    #     comp = sapply(models, function(cox1) {
-    #         sapply(models, function(cox2) {
-    #             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
-    #         })
-    #     })
-    #     # comp = ifelse(comp < 0.05, comp, NA)
-    #     train.sig = signif(comp, 3)
-    #     tmp = val
-    #     comp = sapply(models, function(cox1) {
-    #         sapply(models, function(cox2) {
-    #             cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
-    #         })
-    #     })
-    #     # comp = ifelse(comp < 0.05, comp, NA)
-    #     val.sig = signif(comp, 3)
-    # }
+    if (T) {    
+        tmp = train
+        comp = sapply(models, function(cox1) {
+            sapply(models, function(cox2) {
+                cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
+            })
+        })
+        # comp = ifelse(comp < 0.05, comp, NA)
+        train.sig = signif(comp, 3)
+        tmp = test
+        comp = sapply(models, function(cox1) {
+            sapply(models, function(cox2) {
+                cindex.comp(to_raw_ci(tmp, cox2), to_raw_ci(tmp, cox1))$p.value
+            })
+        })
+        # comp = ifelse(comp < 0.05, comp, NA)
+        val.sig = signif(comp, 3)
+    }
 
-
-    bind = rbind(val, test)
-    is.bind = T
     # bind = test
     # plots
     dd.features = do.call(c, features.list)
@@ -153,8 +154,8 @@ if (T) {
     pdf(file.path(root, paste0('ImageProcessing/combine_model/_plots/strat.pdf')), width = 16, height = 30) 
     par(mfrow = c(6, 2))
     all = rbind(train, val, test)
-    risk_plot(all[all$gender == 1,], cutoff, name, main = "Male")
-    risk_plot(all[all$gender == 2,], cutoff, name, main = "Female")
+    risk_plot(all[all$age == 0,], cutoff, name, main = "age < 52")
+    risk_plot(all[all$age == 1,], cutoff, name, main = "age >= 52")
     risk_plot(all[all$T.read == 0,], cutoff, name, main = "T-stage: I-II")
     risk_plot(all[all$T.read == 1,], cutoff, name, main = "T-stage: III-IV")
     risk_plot(all[all$smoke == 0,], cutoff, name, main = "no smoke")
@@ -163,8 +164,8 @@ if (T) {
     risk_plot(all[all$HB == 1,], cutoff, name, main = "HB high")
     risk_plot(all[all$total.cut == 0,], cutoff, name, main = "total.cut I-III")
     risk_plot(all[all$total.cut == 1,], cutoff, name, main = "total.cut IV")
-    risk_plot(all[all$family == 0,], cutoff, name, main = "no family")
-    risk_plot(all[all$family == 1,], cutoff, name, main = "family")
+    # risk_plot(all[all$family == 0,], cutoff, name, main = "no family")
+    # risk_plot(all[all$family == 1,], cutoff, name, main = "family")
     # risk_plot(all[all$smoke == 0,], cutoff, name, main = "Smoke")
     # risk_plot(all[all$smoke == 1,], cutoff, name, main = "No smoke")
     dev.off()

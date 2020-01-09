@@ -43,7 +43,7 @@ np.mean((tps == preds)[np.sum(pat_fig[set_pat == 0], axis = 0) == 1])
 
 h.close()
 
-net = torch.load(os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Jan.04_11:52.model"))
+net = torch.load(os.path.join(root, "ImageProcessing/survival_analysis/_models/success.Jan.06_10:53.model"))
 net = net.module.cuda()
 net.eval()
 preds = []
@@ -74,6 +74,6 @@ csv.to_csv(os.path.join(root, "ImageProcessing/combine_model/_data/preds.csv"))
 
 tr = h["set_pat"][:] == 0
 ts = h["set_pat"][:] == 1
-labelsi = labels[tr]
-predsi = preds[tr]
+labelsi = labels[ts]
+predsi = preds[ts]
 ci = concordance_index(np.abs(labelsi), -predsi, np.where(labelsi > 0, 1, 0))

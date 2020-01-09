@@ -1,55 +1,58 @@
-suppressPackageStartupMessages({
-    library(survcomp)
-    library(glmnet)
-    library(survival)
-    library(caret)
-    library(randomForestSRC)
-    library(ggplot2)
-    library(pheatmap)
-})
-if (dir.exists("/wangshuo")) {
-    root = "/wangshuo/zhaox"
-} else {
-    root = "/home/tongxueqing/zhao"
-}
-set.seed(0)
-
-data = read.csv(file.path(root, "ImageProcessing/mr_clinic_model/_data/mr.iccfiltered.csv"), header = T, row.names = 1, stringsAsFactors = F)
-labeldata = read.csv(file.path(root, "ImageProcessing/mr_clinic_model/_data/clinic/info.csv"), header = T, row.names = 1, stringsAsFactors = F)
-data[,c("time", "event")] = labeldata[match(data$name, labeldata$name), c('time', 'event')]
-common.name = intersect(data$name, labeldata$name)
-data = data[data$name %in% common.name,]
-data$time = labeldata$time[match(data$name, labeldata$name)]
-data$event = labeldata$event[match(data$name, labeldata$name)]
-
-to_ci = function(set, cox = cox.new) {
-    pred = predict(cox, newdata = set, type = "lp")
-    ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")  
-    ci$c.index  
-    # paste(round(ci$c.index, 3), " (", round(ci$lower, 3), "-", round(ci$upper, 3), ") ", signif(ci$p.value, 3), sep = "")
-}
-
-combine_pred = function(set, models = L) {
-    names = set[set$series == 1,]$name
-    time = set[set$series == 1,]$time
-    event = set[set$series == 1,]$event
-    preds = sapply(1:3, function(s) {
-        s.set = set[set$series == s,]
-        s.set = s.set[match(s.set$name, names),]
-        pred = predict(models[[s]], newdata = s.set, type = "lp")
+if (T) {    
+    suppressPackageStartupMessages({
+        library(survcomp)
+        library(glmnet)
+        library(survival)
+        library(caret)
+        library(randomForestSRC)
+        library(ggplot2)
+        library(pheatmap)
     })
-    # pred = rowMeans(preds)
-    pred = apply(preds, 1, max)
-    ci = concordance.index(x = pred, surv.time = time, surv.event = event, method = "noether")
-    ci$c.index
+    if (dir.exists("/wangshuo")) {
+        root = "/wangshuo/zhaox"
+    } else {
+        root = "/home/tongxueqing/zhao"
+    }
+    set.seed(0)
+
+    data = read.csv(file.path(root, "ImageProcessing/mr_clinic_model/_data/mr.iccfiltered.csv"), header = T, row.names = 1, stringsAsFactors = F)
+    labeldata = read.csv(file.path(root, "ImageProcessing/mr_clinic_model/_data/clinic/info.csv"), header = T, row.names = 1, stringsAsFactors = F)
+    data[,c("time", "event")] = labeldata[match(data$name, labeldata$name), c('time', 'event')]
+    common.name = intersect(data$name, labeldata$name)
+    data = data[data$name %in% common.name,]
+    data$time = labeldata$time[match(data$name, labeldata$name)]
+    data$event = labeldata$event[match(data$name, labeldata$name)]
+
+    to_ci = function(set, cox = cox.new) {
+        pred = predict(cox, newdata = set, type = "lp")
+        ci = concordance.index(x = pred, surv.time = set$time, surv.event = set$event, method = "noether")  
+        ci$c.index  
+        # paste(round(ci$c.index, 3), " (", round(ci$lower, 3), "-", round(ci$upper, 3), ") ", signif(ci$p.value, 3), sep = "")
+    }
+
+    combine_pred = function(set, models = L, a = c(1, 1, 1)) {
+        names = set[set$series == 1,]$name
+        time = set[set$series == 1,]$time
+        event = set[set$series == 1,]$event
+        preds = sapply(1:3, function(s) {
+            s.set = set[set$series == s,]
+            s.set = s.set[match(s.set$name, names),]
+            pred = predict(models[[s]], newdata = s.set, type = "lp")
+        })
+        # pred = rowMeans(preds)
+        # pred = apply(preds, 1, function(x) sum(a * x) / sum(a))
+        pred = apply(preds, 1, mean)
+        ci = concordance.index(x = pred, surv.time = time, surv.event = event, method = "noether")
+        ci$c.index
+    }
+
+
+    pat_set = read.table(file.path(root, "ImageProcessing/combine_model/_data/newsets/18/newset.txt"))$V1
+
+    trainAll = data[data$set == 0 & data$name %in% pat_set,]
+    valAll = data[data$set == 0 & !data$name %in% pat_set,]
+    test = data[data$set == 1,]
 }
-
-
-pat_set = read.table(file.path(root, "ImageProcessing/combine_model/_data/new_set.txt"))$V1
-
-trainAll = data[data$set == 0 & data$name %in% pat_set,]
-valAll = data[data$set == 0 & !data$name %in% pat_set,]
-test = data[data$set == 1,]
 
 n = 20
 models.all = lapply(1:3, function(s) {
@@ -112,16 +115,18 @@ models.all = lapply(1:3, function(s) {
             subtrain = train[,c(subfeatures, "time", "event")]
             cox = coxph(Surv(time, event) ~ . , data = subtrain)
             sink("/dev/null")
-            cox = step(cox, direction = c("both"))
+            cox = step(cox, direction = "backward")
             sink()
             model.list[[length(model.list) + 1]] = cox
             summ = summary(cox)
             summ = as.data.frame(summ$coefficients)
-            if (all(summ[,"Pr(>|z|)"] < 0.05)) {
-                break
-            } else {
-                subfeatures = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
-            }
+            try({                
+                if (all(summ[,"Pr(>|z|)"] < 0.05)) {
+                    break
+                } else {
+                    subfeatures = rownames(summ)[summ[,"Pr(>|z|)"] < 0.05]
+                }
+            })
         }
         if (length(model.list) == 0) {NULL}
         else {model.list}
@@ -129,9 +134,7 @@ models.all = lapply(1:3, function(s) {
     do.call(c, models)
 })
 
-n = 20
 result = matrix(rep(0, 4 * n), c(n, 4))
-cits = 0
 Ls = list()
 for(w in 1:n / n) {
     L = lapply(1:3, function(s) {
@@ -168,15 +171,6 @@ result
 result[order(result[,3]),]
 L = Ls[[match(max(result[,3]), result[,3])]]
 
-split.result = t(sapply(1:n / n, function(w) {
-    L = Ls[[w * n]]
-    citr = sapply(3:3, function(s) to_ci(trainAll[trainAll$series == s,], L[[s]]))
-    civl = sapply(3:3, function(s) to_ci(valAll[valAll$series == s,], L[[s]]))
-    cits = sapply(3:3, function(s) to_ci(test[test$series == s,], L[[s]]))
-    c(w, citr, civl, cits)
-}))
-split.result
-
 newpreds = sapply(1:3, function(s) {
     cox = L[[s]]
     pred = predict(cox, newdata = data[data$series == s,], type = "lp")
@@ -186,7 +180,7 @@ cname = paste("mr_serie", 1:3, sep = '')
 preds = read.csv(file.path(root, "ImageProcessing/combine_model/_data/preds.csv"), row.names = 1, stringsAsFactors = F)
 preds[,grepl("(mr|cli)_fold", colnames(preds))] = NULL
 # preds[,cname] = newpreds[match(data$name, preds$name),]
-preds[,"sig_mr"] = apply(newpreds, 1, max)
+preds[,"sig_mr"] = apply(newpreds, 1, mean)
 preds$set = ifelse(preds$name %in% test$name, 1, 0)
 write.csv(preds, file.path(root, "ImageProcessing/combine_model/_data/preds.csv"))
 
@@ -198,3 +192,31 @@ m2 = coxph(Surv(time, event) ~ original_shape_Flatness + log.sigma.2.0.mm.3D_gld
 m3 = coxph(Surv(time, event) ~ original_shape_Flatness + original_shape_Maximum2DDiameterColumn+ original_shape_Maximum2DDiameterRow + original_shape_SurfaceVolumeRatio + original_glszm_SizeZoneNonUniformity
 , data = trainAll[trainAll$series == 3,])
 L = list(m1, m2, m3)
+
+
+### 
+step.models = lapply(models.all, function(models) lapply(models, step, direction = "backward"))
+L = lapply(1:3, function(s) {
+        models = models.all[[s]]
+        train = trainAll[trainAll$series == s,]
+        val = valAll[valAll$series == s,]
+        models = Filter(Negate(is.null), models)
+        cis = sapply(models, function(cox) {
+            civl = to_ci(train, cox)
+            civl
+        })
+        model = models[[match(max(cis), cis)]]
+        model
+    })
+results = matrix(rep(0, 5 * 21 ^ 2), c(21 ^ 2, 5))
+i = 1
+for (a in (0:20) / 20) {
+    for (b in (0:20) / 20) {
+        citr = combine_pred(trainAll, L, c(a, b, 1 - a - b))
+        civl = combine_pred(valAll, L, c(a, b, 1 - a - b))
+        cits = combine_pred(test, L, c(a, b, 1 - a - b))
+        results[i,] = c(a, b, citr, civl, cits)
+        i = i + 1
+    }
+}
+results[order(rowMeans(results[,4:5])),]

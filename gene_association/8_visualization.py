@@ -235,7 +235,7 @@ if __name__ == '__main__':
 	# feature method, and a classifier method,
 	# as in the VGG models in torchvision.
 	normedimg = os.popen("find /wangshuo/zhaox/ImageProcessing/gene_association/_data/self_normed -name *tif").read().strip().split('\n')
-	net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/FINAL_SURV.model").module
+	net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/success.Jan.06_10:53.model").module
 	net.eval()
 	mynet = torch.nn.Sequential(OrderedDict([
 		("features", torch.nn.Sequential(OrderedDict(list(net.prenet.named_children())[:-2]))),

@@ -4,11 +4,11 @@ import h5py
 import numpy as np
 import os
 from lifelines.utils import concordance_index
-os.environ["CUDA_VISIBLE_DEVICES"] = "6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-h = h5py.File("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/sliced.h5", 'r')
-net = torch.load("/home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP.model")
-net = net.cuda()
+h = h5py.File("/wangshuo/zhaox/ImageProcessing/gene_association/_data/sliced.h5", 'r')
+net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/success.Jan.06_10:53.model")
+net = net.module.cuda()
 net.eval()
 
 data = h['data']
@@ -28,10 +28,13 @@ for i, one in enumerate(uniname):
     valid = name == one
     res = np.max(sig[valid])
     unisig[i] = res
-# saved in /home/tongxueqing/zhao/ImageProcessing/gene_association/_data/DP.sig.txt
+
+for i in range(len(unisig)):
+    print("%s,%s" % (uniname[i].decode(), str(unisig[i])))
+# saved in /wangshuo/zhaox/ImageProcessing/gene_association/_data/DP.sig.txt
 
 def test():
-    testh = h5py.File("/home/tongxueqing/zhao/ImageProcessing/survival_analysis/_data/compiled.h5", 'r')
+    testh = h5py.File("/wangshuo/zhaox/ImageProcessing/survival_analysis/_data/compiled.h5", 'r')
     data = testh['data']
     pats = testh['pats']
     patfig = testh['pat_fig']

@@ -88,7 +88,7 @@ class Data(object):
         else:
             train_val = np.arange(len(self.set_pat))[self.set_pat == 0]
             train_val_name = self.pats[self.set_pat == 0]
-            train_name = [int(x.strip().split()[1]) for x in open(os.path.join(root, "ImageProcessing/combine_model/_data/new_set.txt"))]
+            train_name = [int(x.strip().split()[1]) for x in open(os.path.join(root, "ImageProcessing/combine_model/_data/newsets/18/newset.txt"))]
             train = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] in train_name])
             val = np.array([train_val[i] for i in range(len(train_val)) if train_val_name[i] not in train_name])
             test = np.arange(len(self.set_pat))[self.set_pat == 1]
@@ -237,21 +237,21 @@ class Train(object):
 if __name__ == "__main__":
     global modelpath, plotpath, outfile
     modelpath, plotpath, outfile = sys.argv[1:4]
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
     params = {
         "savedmodel": os.path.join(root, "ImageProcessing/survival_analysis/_models/FINAL_PRENET.model"),
         "savedmodel2": os.path.join(root, "ImageProcessing/survival_analysis/_models/FINAL_POSTNET.model"),
         "h5path": os.path.join(root, "ImageProcessing/survival_analysis/_data/compiled.h5"),
-        "lr": 2e-7, # for resnet part
-        "lr2": 4e-8, # for fc part
+        "lr": 1e-6, # for resnet part
+        "lr2": 2e-7, # for fc part
         "batch_size": 32,
         "epochs": 100,
-        "gpus": [0, 1],
+        "gpus": [0],
         "cbstep": 1,
         "lr_decay": 5.6e-6,
         "optim": "SGD",
-        "weight_decay1": 1e-2,
-        "weight_decay2": 0.85,
+        "weight_decay1": 1e-3,
+        "weight_decay2": 0.5,
         "mission": "ClassSurv",
         "ifprint": True,
         "ifcombine": False

@@ -22,22 +22,21 @@ mr = read.csv(file.path(root, "gene_association/_data/mr.merged.csv"))
 
 have = list(
     'T1' = c(
-        "log.sigma.4.0.mm.3D_glszm_GrayLevelNonUniformity", 
-        "original_shape_Flatness", 
-        "wavelet.LH_glcm_ClusterShade"
+        "original_shape_LeastAxisLength"
     ),
     'T2' = c(
-        "original_shape_Flatness",
-        "log.sigma.2.0.mm.3D_gldm_DependenceNonUniformityNormalized",
-        "wavelet.LL_gldm_DependenceNonUniformity",
-        "log.sigma.2.0.mm.3D_glrlm_RunLengthNonUniformityNormalized"
-    ),
-    "T1C" = c(
+        "log.sigma.2.0.mm.3D_glcm_DifferenceEntropy", 
+        "wavelet.LH_gldm_GrayLevelNonUniformity",
         "original_shape_Flatness",
         "original_shape_Maximum2DDiameterColumn",
-        "original_shape_Maximum2DDiameterRow",
-        "original_shape_SurfaceVolumeRatio",
-        "original_glszm_SizeZoneNonUniformity"
+        "original_shape_SurfaceVolumeRatio"
+    ),
+    "T1C" = c(
+        "original_shape_SurfaceVolumeRatio", 
+        "original_shape_Sphericity",
+        "wavelet.LH_glrlm_RunPercentage",
+        "original_shape_LeastAxisLength",
+        "original_shape_Maximum2DDiameterColumn"
     )
 )
 
@@ -89,6 +88,14 @@ pss = lapply(names(have), function(seq) {
         })
         p.values[have[[seq]]]
     })
+    if (is.null(dim(x))) {
+        x = t(as.data.frame(x))
+        rownames(x) = "T1.original_shape_LeastAxisLength"
+        colnames(x) = sapply(colnames(x), function(x) strsplit(x, '[.]')[[1]][1])
+    } else {
+        rownames(x) = paste0(seq, rownames(x))
+    }
+    x
 })
 pss = do.call(rbind, pss)
 pss = rbind(pss, sapply(names(grps), function(grp) {
@@ -97,9 +104,8 @@ pss = rbind(pss, sapply(names(grps), function(grp) {
     submr = dp.sig
     submryes = submr[submr$name %in% yesID,]
     submrnot = submr[submr$name %in% notID,]
-
-    p.values = t.test(x = submryes$dp_sig, y = submrnot$dp_sig)$p.value
-})); tmp = rownames(pss); tmp[13] = "Pathomics_signature"; rownames(pss) = tmp
+    p.values = wilcox.test(x = submryes$dp_sig, y = submrnot$dp_sig)$p.value
+})); tmp = rownames(pss); tmp[12] = "Pathomics_signature"; rownames(pss) = tmp
 
 #pheatmap(-log10(pss), filename = file.path(root, "gene_association/_plots/p.values.pdf"), treeheight_row = 0, treeheight_col = 0, width = 10, height = 6, main = "-log10(p)")
 

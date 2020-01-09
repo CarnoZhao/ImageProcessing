@@ -89,7 +89,14 @@ if (F) {
     data = val
     data = test
     data$stra = ifelse(data$deep_mr_cli < cutoff, 0, 1)
-    hazard.ratio(data$deep_mr_cli, surv.time = data$time, surv.event = data$event, strat = data$stra)
+    hr = hazard.ratio(data$deep_mr_cli, surv.time = data$time, surv.event = data$event, strat = data$stra)
+    hr$hazard.ratio; hr$lower; hr$upper; hr$p.value
+    f = Surv(data$time[data$stra == 0], data$event[data$stra == 0])
+    a = summary(survfit(f ~ 1))
+    a$surv[match(min(abs(a$time - 36)), abs(a$time - 36))]
+    f = Surv(data$time[data$stra == 1], data$event[data$stra == 1])
+    a = summary(survfit(f ~ 1))
+    a$surv[match(min(abs(a$time - 36)), abs(a$time - 36))]
 }
 
 # risk_plot_strat = function(data, cutoff, name, info, cutby, cutby.names) {

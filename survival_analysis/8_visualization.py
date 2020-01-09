@@ -237,7 +237,7 @@ if __name__ == '__main__':
 	normedimg = os.popen("find /wangshuo/zhaox/ImageProcessing/stain_classification/_data/subsets/train/ -name *tif").read().strip().split('\n')
 	# normedimg = np.random.choice(normedimg, 1000)
 	rawimg = [os.path.join("/wangshuo/zhaox/ImageProcessing/stain_classification/_data/augged/", *f.split('/')[-3:]) for f in normedimg]
-	net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/FINAL_SURV.model").module
+	net = torch.load("/wangshuo/zhaox/ImageProcessing/survival_analysis/_models/success.Jan.06_10:53.model").module
 	net.eval()
 	mynet = torch.nn.Sequential(OrderedDict([
 		("features", torch.nn.Sequential(OrderedDict(list(net.prenet.named_children())[:-2]))),

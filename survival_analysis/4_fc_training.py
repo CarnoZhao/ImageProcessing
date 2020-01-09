@@ -181,11 +181,11 @@ class Train(object):
                 Yhat[i:i + len(y)] = self.__get_instance(pats, False)
                 i += len(y)
             ci = concordance_index(np.abs(Y), -Yhat, np.where(Y > 0, 1, 0))
-            if name == "train":
-                Yhatstop = Yhat[:round(0.5 * len(Yhat))]
-                Ystop = Y[:round(0.5 * len(Y))]
-                cistop = concordance_index(np.abs(Ystop), -Yhatstop, np.where(Ystop > 0, 1, 0))
-                cis["stop"] = cistop
+            # if name == "train":
+            #     Yhatstop = Yhat[:round(0.5 * len(Yhat))]
+            #     Ystop = Y[:round(0.5 * len(Y))]
+            #     cistop = concordance_index(np.abs(Ystop), -Yhatstop, np.where(Ystop > 0, 1, 0))
+            #     cis["stop"] = cistop
             out += " | %s: %.3f" % (name, ci)
             cis[name] = ci
         if ifprint and i % self.cbstep == 0:
@@ -248,11 +248,11 @@ if __name__ == "__main__":
         modelpath = ref.replace("Nov", str(iii))
         params['lr'] = 10 ** (np.random.rand() * 7 - 7)
         params['lr_decay'] = 10 ** (np.random.rand() * 7 - 7)
-        params['weight_decay'] = 10 ** (np.random.rand() * 7 - 7)
-        params['layer'] = 100 + int(200 * np.random.rand())
-        params['p'] = np.random.rand() * 0.8
-        params['epochs'] = np.random.randint(20, 80)
-        params['optim'] = np.random.choice(['SGD', 'Ada'], 1)[0]
+        params['weight_decay'] = 10 * np.random.random()
+        params['layer'] = 50 + int(50 * np.random.rand())
+        params['p'] = 0.5 + (np.random.rand() - 0.5) * 0.3
+        params['epochs'] = np.random.randint(100, 300)
+        # params['optim'] = np.random.choice(['SGD', 'Ada'], 1)[0]
         params['cbstep'] = params['epochs'] - 1
         ep, cis = Train(**params).train()
         out = "lr: %.3e | ep: %d | lrd: %.3e | l: %d | p: %.3f | wtd: %.3e | op: %s | citr: %.4f | civl: %.4f | cits: %.4f" % (
@@ -261,5 +261,7 @@ if __name__ == "__main__":
         )
         if any([ci < 0.63 for ci in cis.values()]):
             os.system("rm %s" % modelpath)
+        else:
+            os.system("mv %s %s" % (modelpath, modelpath.replace("Jan", "%d.Jan" % iii)))
         print_to_out(out)
         iii += 1
